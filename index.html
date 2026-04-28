@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SCOUT · Daily Football Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#080b10;--surface:#0e1219;--card:#131820;--border:#1c2333;
+  --accent:#3b82f6;--accent2:#1d4ed8;
+  --text:#f1f5f9;--muted:#64748b;--subtle:#1e293b;
+}
+body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;min-height:100vh}
+.cond{font-family:'Barlow Condensed',sans-serif}
+#setup{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:1.5rem}
+.setup-box{width:100%;max-width:400px}
+.logo-area{text-align:center;margin-bottom:2rem}
+.ball{font-size:3rem;display:block;margin-bottom:.5rem;animation:bob 2s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.logo-title{font-family:'Barlow Condensed',sans-serif;font-size:3.5rem;letter-spacing:.12em;color:var(--text);line-height:1}
+.logo-sub{color:var(--muted);font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;margin-top:.4rem}
+.setup-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:1.75rem}
+.field-label{color:var(--muted);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;margin-bottom:.4rem;display:block}
+.field-input{width:100%;background:#080b10;border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-family:'Barlow',sans-serif;font-size:.875rem;outline:none;transition:border-color .2s;margin-bottom:.35rem}
+.field-input:focus{border-color:var(--accent)}
+.field-note{color:#4b5563;font-size:.68rem;margin-bottom:1.25rem;line-height:1.5}
+.field-note a{color:var(--accent);text-decoration:none}
+.save-row{display:flex;align-items:center;gap:.5rem;margin:.5rem 0 1rem}
+.save-row input{accent-color:var(--accent);width:15px;height:15px;cursor:pointer;flex-shrink:0}
+.save-row label{color:var(--muted);font-size:.8rem;cursor:pointer}
+.btn-launch{width:100%;background:var(--accent);border:none;border-radius:8px;padding:13px;color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:1rem;letter-spacing:.12em;cursor:pointer;transition:background .2s}
+.btn-launch:hover{background:var(--accent2)}
+.setup-err{color:#fca5a5;font-size:.75rem;margin:.4rem 0;min-height:1rem}
+#app{display:none;flex-direction:column;min-height:100vh}
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:.85rem 1.1rem;display:flex;align-items:center;gap:.75rem;position:sticky;top:0;z-index:20}
+.hdr-title{font-family:'Barlow Condensed',sans-serif;font-size:1.5rem;letter-spacing:.1em;line-height:1;flex:1}
+.hdr-sub{font-size:.62rem;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-top:1px}
+.btn-refresh{background:var(--accent);border:none;border-radius:7px;color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:.85rem;letter-spacing:.1em;padding:7px 14px;cursor:pointer;white-space:nowrap;transition:background .15s}
+.btn-refresh:hover{background:var(--accent2)}
+.btn-refresh:disabled{background:#1e293b;color:var(--muted);cursor:not-allowed}
+.btn-keys{background:transparent;border:1px solid var(--border);border-radius:7px;color:var(--muted);font-size:.75rem;padding:7px 10px;cursor:pointer;font-family:'Barlow',sans-serif;white-space:nowrap}
+.btn-keys:hover{border-color:var(--accent);color:var(--accent)}
+main{flex:1;max-width:660px;width:100%;margin:0 auto;padding:1.2rem 1rem 3rem}
+#loading{display:none;flex-direction:column;align-items:center;padding:3.5rem 1rem;text-align:center}
+.spin{font-size:2.5rem;animation:spin 1.1s linear infinite;display:block;margin-bottom:1.25rem}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.load-title{font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;letter-spacing:.1em;color:var(--accent);margin-bottom:.4rem}
+.load-stage{color:var(--muted);font-size:.75rem;margin-bottom:1rem;max-width:280px;line-height:1.6}
+.prog-track{width:240px;height:3px;background:var(--subtle);border-radius:4px;overflow:hidden;margin-bottom:.5rem}
+.prog-bar{height:100%;background:linear-gradient(90deg,var(--accent),#6366f1);border-radius:4px;width:0%;transition:width .5s ease}
+.prog-pct{color:#374151;font-size:.65rem}
+.stats-bar{display:flex;gap:1.25rem;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.9rem 1.1rem;margin-bottom:1.5rem;flex-wrap:wrap}
+.stat-label{color:var(--muted);font-size:.62rem;letter-spacing:.12em;text-transform:uppercase}
+.stat-val{font-family:'Barlow Condensed',sans-serif;font-size:1.6rem;color:var(--text);line-height:1.1}
+.league-section{margin-bottom:2rem}
+.league-hdr{display:flex;align-items:center;gap:.6rem;margin-bottom:.85rem;padding-bottom:.6rem;border-bottom:1px solid var(--border);cursor:pointer;user-select:none}
+.lg-flag{font-size:1.1rem}
+.lg-name{font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;letter-spacing:.07em;color:var(--text)}
+.lg-chev{margin-left:auto;color:var(--muted);font-size:.72rem}
+.lg-ctx{color:#4b5563;font-size:.75rem;margin-bottom:.75rem;line-height:1.6;padding-left:.2rem}
+.pick-card{background:var(--card);border:1px solid var(--border);border-radius:11px;margin-bottom:.6rem;overflow:hidden}
+.pick-hdr{padding:12px 14px;display:flex;align-items:center;gap:10px;cursor:pointer}
+.pick-num{width:24px;height:24px;border-radius:50%;background:var(--subtle);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:'Barlow Condensed',sans-serif;font-size:.75rem;color:var(--accent)}
+.pick-info{flex:1;min-width:0}
+.matchup{font-size:.88rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.kickoff{font-size:.68rem;color:var(--muted);margin-top:2px}
+.pick-right{text-align:right;flex-shrink:0}
+.conf{font-family:'Barlow Condensed',sans-serif;font-size:.68rem;letter-spacing:.08em;padding:2px 7px;border-radius:4px;display:block;margin-bottom:3px}
+.conf-h{background:#052e16;color:#6ee7b7;border:1px solid #065f46}
+.conf-m{background:#1c1107;color:#fcd34d;border:1px solid #92400e}
+.pick-chev{color:var(--muted);font-size:.68rem}
+.pick-body{padding:0 14px 14px;border-top:1px solid var(--border)}
+.pick-target{display:inline-flex;align-items:center;gap:8px;background:#0f172a;color:#93c5fd;font-size:.75rem;padding:6px 12px;border-radius:6px;margin:10px 0 10px;border:1px solid #1e3a5f;flex-wrap:wrap}
+.xg-badge{background:#1e3a5f;color:#7dd3fc;font-size:.68rem;padding:2px 7px;border-radius:4px;font-family:'Barlow Condensed',sans-serif;letter-spacing:.06em}
+.pick-reason{color:#94a3b8;font-size:.8rem;line-height:1.8;margin-bottom:10px}
+/* form strip */
+.form-section{margin-bottom:10px}
+.form-label{color:var(--muted);font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px}
+.form-strip{display:flex;gap:4px;flex-wrap:wrap}
+.form-game{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:44px;flex:1}
+.form-result{font-family:'Barlow Condensed',sans-serif;font-size:.8rem;font-weight:600;width:22px;height:22px;border-radius:4px;display:flex;align-items:center;justify-content:center}
+.res-w{background:#052e16;color:#6ee7b7}
+.res-d{background:#1c1a00;color:#fde68a}
+.res-l{background:#1a0505;color:#fca5a5}
+.form-score{font-size:.6rem;color:var(--muted);line-height:1.2;text-align:center}
+.form-xg{font-size:.58rem;color:#374151;line-height:1.2;text-align:center}
+/* tags */
+.tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+.tag{font-size:.63rem;padding:2px 8px;border-radius:999px}
+.t-title{background:#1c1107;color:#fcd34d;border:1px solid #78350f}
+.t-rel{background:#1a0505;color:#fca5a5;border:1px solid #7f1d1d}
+.t-play{background:#1a1035;color:#c4b5fd;border:1px solid #4c1d95}
+.t-euro{background:#0c1a2e;color:#93c5fd;border:1px solid #1e3a5f}
+.t-form{background:#052e16;color:#6ee7b7;border:1px solid #065f46}
+.t-must{background:#1c0f00;color:#fdba74;border:1px solid #7c2d12}
+.t-def{background:#1f0a1a;color:#f9a8d4;border:1px solid #831843}
+.t-dflt{background:var(--subtle);color:var(--muted);border:1px solid var(--border)}
+.err-box{background:#1a0505;border:1px solid #7f1d1d;border-radius:10px;padding:1rem 1.1rem;margin-bottom:1.2rem;display:flex;gap:.75rem;align-items:flex-start}
+.err-box p{color:#fca5a5;font-size:.8rem;line-height:1.6;margin-bottom:.4rem}
+.btn-retry{background:#7f1d1d;border:none;border-radius:6px;color:#fca5a5;font-size:.72rem;padding:5px 12px;cursor:pointer}
+.footer{text-align:center;color:#1e293b;font-size:.6rem;letter-spacing:.1em;padding-top:.5rem;text-transform:uppercase}
+</style>
+</head>
+<body>
+
+<div id="setup">
+  <div class="setup-box">
+    <div class="logo-area">
+      <span class="ball">⚽</span>
+      <div class="logo-title cond">SCOUT</div>
+      <div class="logo-sub">Live scoring intelligence · 7 leagues</div>
+    </div>
+    <div class="setup-card">
+      <label class="field-label">Anthropic key</label>
+      <input id="ant-key" class="field-input" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false"/>
+      <p class="field-note">From <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a> → API Keys. Each refresh costs ~5p (uses web search).</p>
+      <div class="save-row">
+        <input type="checkbox" id="remember" checked/>
+        <label for="remember">Remember key on this device</label>
+      </div>
+      <div id="setup-err" class="setup-err"></div>
+      <button class="btn-launch" onclick="launch()">LAUNCH SCOUT →</button>
+    </div>
+  </div>
+</div>
+
+<div id="app">
+  <header>
+    <div style="flex:1;min-width:0">
+      <div class="hdr-title cond">⚽ SCOUT</div>
+      <div class="hdr-sub" id="last-updated">—</div>
+    </div>
+    <button class="btn-refresh" id="refresh-btn" onclick="runAnalysis(true)">↻ REFRESH</button>
+    <button class="btn-keys" onclick="goSetup()">KEYS</button>
+  </header>
+  <main>
+    <div id="loading">
+      <span class="spin">⚽</span>
+      <div class="load-title cond" id="load-title">SEARCHING FOR LIVE DATA</div>
+      <div class="load-stage" id="load-stage">Claude is searching the web for today's fixtures…</div>
+      <div class="prog-track"><div class="prog-bar" id="prog"></div></div>
+      <div class="prog-pct" id="prog-pct">0%</div>
+    </div>
+    <div id="results"></div>
+  </main>
+</div>
+
+<script>
+var antKey = "";
+
+window.addEventListener("DOMContentLoaded", function() {
+  var sa = localStorage.getItem("scout_ant");
+  if (sa) {
+    antKey = sa;
+    document.getElementById("ant-key").value = sa;
+    showApp();
+    runAnalysis(false);
+  }
+});
+
+function launch() {
+  var ant = document.getElementById("ant-key").value.trim();
+  var err = document.getElementById("setup-err");
+  if (!ant) { err.textContent = "Please enter your Anthropic key."; return; }
+  if (ant.indexOf("sk-") !== 0) { err.textContent = "Anthropic keys start with sk- — check you copied it fully."; return; }
+  err.textContent = "";
+  antKey = ant;
+  if (document.getElementById("remember").checked) localStorage.setItem("scout_ant", ant);
+  showApp();
+  runAnalysis(false);
+}
+
+function showApp() { document.getElementById("setup").style.display = "none"; document.getElementById("app").style.display = "flex"; }
+function goSetup() { document.getElementById("app").style.display = "none"; document.getElementById("setup").style.display = "flex"; }
+
+function setP(pct, stage, title) {
+  var p = Math.min(Math.round(pct), 100);
+  document.getElementById("prog").style.width = p + "%";
+  document.getElementById("prog-pct").textContent = p + "%";
+  if (stage) document.getElementById("load-stage").textContent = stage;
+  if (title) document.getElementById("load-title").textContent = title;
+}
+
+var CACHE_KEY      = "scout_data";
+var CACHE_TIME_KEY = "scout_time";
+var CACHE_HOURS    = 4;
+
+function saveCache(analysis) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(analysis));
+    localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
+  } catch(e) {}
+}
+
+function loadCache() {
+  try {
+    var t = localStorage.getItem(CACHE_TIME_KEY);
+    var d = localStorage.getItem(CACHE_KEY);
+    if (!t || !d) return null;
+    return { data: JSON.parse(d), timestamp: parseInt(t), age: Date.now() - parseInt(t) };
+  } catch(e) { return null; }
+}
+
+function formatCacheTime(ts) {
+  var d = new Date(ts);
+  return d.toLocaleDateString("en-GB", { weekday:"short", day:"numeric", month:"short" })
+    + " at " + d.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
+}
+
+function updateLastUpdatedBanner(ts, fromCache) {
+  var el = document.getElementById("last-updated");
+  if (!el) return;
+  el.textContent = (fromCache ? "Cached · " : "Live · ") + "Last updated " + formatCacheTime(ts);
+}
+
+async function runAnalysis(forceRefresh) {
+  // Check cache — show it immediately if fresh enough
+  var cache = loadCache();
+  if (cache && !forceRefresh) {
+    var ageHours = cache.age / 3600000;
+    if (ageHours < CACHE_HOURS) {
+      render(cache.data);
+      updateLastUpdatedBanner(cache.timestamp, true);
+      return;
+    }
+  }
+
+  var btn     = document.getElementById("refresh-btn");
+  var loading = document.getElementById("loading");
+  var results = document.getElementById("results");
+  btn.disabled = true;
+  results.innerHTML = "";
+  loading.style.display = "flex";
+
+  var today = new Date().toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
+
+  var pct = 5;
+  setP(pct, "Claude is searching the web for fixtures and xG data…", "SEARCHING FOR LIVE DATA");
+  var ticker = setInterval(function() {
+    pct = Math.min(pct + 0.3, 88);
+    setP(pct);
+    if (pct > 25 && pct < 26) setP(pct, "Checking league tables and recent form…");
+    if (pct > 50 && pct < 51) setP(pct, "Looking up xG data for recent games…");
+    if (pct > 70 && pct < 71) setP(pct, "Generating analysis…", "GENERATING ANALYSIS");
+  }, 600);
+
+  try {
+    var prompt = "Today is " + today + ".\n\n"
+      + "You are an expert football analyst with access to web search. Search the web to find current, accurate data for these 7 leagues and produce a detailed scoring intelligence report.\n\n"
+      + "LEAGUES:\n"
+      + "1. Premier League (England)\n"
+      + "2. EFL Championship (England)\n"
+      + "3. La Liga (Spain)\n"
+      + "4. Bundesliga (Germany)\n"
+      + "5. Ligue 1 (France)\n"
+      + "6. Primeira Liga (Portugal)\n"
+      + "7. Süper Lig (Turkey)\n\n"
+      + "FOR EACH LEAGUE, search for:\n"
+      + "- Upcoming fixtures in the next 7 days\n"
+      + "- Current league standings\n"
+      + "- Recent form and results for teams you pick\n"
+      + "- xG (expected goals) data from sites like understat.com, fbref.com, or sofascore.com for the picked team's last 5 games\n\n"
+      + "Then pick the TOP 3 games per league most likely to see at least one team score, considering: table position, what is at stake (title/promotion/relegation/playoffs/Europe), recent form, opponent defensive weakness, and key injuries.\n\n"
+      + "Return ONLY valid JSON, no markdown, no text before or after the JSON:\n"
+      + "{\n"
+      + "  \"leagues\": [\n"
+      + "    {\n"
+      + "      \"league\": \"league name\",\n"
+      + "      \"flag\": \"flag emoji\",\n"
+      + "      \"context\": \"one sentence on the key battle in this league right now\",\n"
+      + "      \"picks\": [\n"
+      + "        {\n"
+      + "          \"home\": \"Home Team\",\n"
+      + "          \"away\": \"Away Team\",\n"
+      + "          \"date\": \"e.g. Sat 3 May\",\n"
+      + "          \"time\": \"e.g. 15:00\",\n"
+      + "          \"pickTeam\": \"team most likely to score\",\n"
+      + "          \"confidence\": \"High or Medium\",\n"
+      + "          \"xg\": 1.8,\n"
+      + "          \"reason\": \"3 sentences covering table position and what they need, opponent weakness, recent form\",\n"
+      + "          \"tags\": [\"2-3 tags from: title race, relegation fight, playoff push, European push, form on fire, must-win, poor defence, home fortress, nothing to lose, top vs bottom\"],\n"
+      + "          \"form\": [\n"
+      + "            { \"result\": \"W\", \"score\": \"2-0\", \"xg\": 2.1, \"actual\": 2 },\n"
+      + "            { \"result\": \"D\", \"score\": \"1-1\", \"xg\": 1.4, \"actual\": 1 },\n"
+      + "            { \"result\": \"W\", \"score\": \"3-1\", \"xg\": 2.8, \"actual\": 3 },\n"
+      + "            { \"result\": \"L\", \"score\": \"0-1\", \"xg\": 0.9, \"actual\": 0 },\n"
+      + "            { \"result\": \"W\", \"score\": \"2-1\", \"xg\": 1.7, \"actual\": 2 }\n"
+      + "          ]\n"
+      + "        }\n"
+      + "      ]\n"
+      + "    }\n"
+      + "  ]\n"
+      + "}\n\n"
+      + "IMPORTANT NOTES:\n"
+      + "- form array must be exactly 5 items, most recent first\n"
+      + "- result must be W, D or L\n"
+      + "- xg at the pick level is your estimate of their xG for the upcoming fixture\n"
+      + "- xg in each form game is that team's xG in that game (not the opponent's)\n"
+      + "- actual in each form game is goals that team actually scored\n"
+      + "- If exact xG is unavailable for a game, provide your best estimate based on the scoreline and context\n"
+      + "- score in form should show the final score of that game (goals for - goals against from the pick team's perspective)";
+
+    var r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": antKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-5",
+        max_tokens: 16000,
+        tools: [{ type: "web_search_20250305", name: "web_search" }],
+        messages: [{ role: "user", content: prompt }]
+      })
+    });
+
+    clearInterval(ticker);
+
+    if (r.status === 401) throw new Error("Anthropic key rejected — tap KEYS to update it.");
+    if (r.status === 429) {
+      // Rate limited - wait 60 seconds and retry once automatically
+      setP(pct, "Rate limited — waiting 60 seconds before retrying…");
+      await new Promise(function(res){ setTimeout(res, 60000); });
+      r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": antKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true"
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-5",
+          max_tokens: 16000,
+          tools: [{ type: "web_search_20250305", name: "web_search" }],
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      if (r.status === 429) throw new Error("Still rate limited — please wait a few minutes and tap Refresh.");
+    }
+    if (r.status === 402) throw new Error("No Anthropic credits — add credit at console.anthropic.com.");
+    if (!r.ok) {
+      var e = await r.json().catch(function(){ return {}; });
+      throw new Error((e && e.error && e.error.message) ? e.error.message : "Anthropic error " + r.status);
+    }
+
+    setP(92, "Rendering results…", "ALMOST DONE");
+    var data = await r.json();
+
+    // Concatenate ALL text blocks from the response
+    var allText = "";
+    if (data.content) {
+      for (var i = 0; i < data.content.length; i++) {
+        if (data.content[i].type === "text" && data.content[i].text) {
+          allText += data.content[i].text;
+        }
+      }
+    }
+
+    // Strip markdown fences and find the JSON object
+    allText = allText.replace(/```json|```/g, "");
+
+    // Find the outermost { } containing "leagues"
+    var analysis = null;
+    var searchFrom = 0;
+    while (searchFrom < allText.length) {
+      var start = allText.indexOf("{", searchFrom);
+      if (start === -1) break;
+      var end = allText.lastIndexOf("}");
+      if (end <= start) break;
+      try {
+        var candidate = JSON.parse(allText.slice(start, end + 1));
+        if (candidate && candidate.leagues && candidate.leagues.length > 0) {
+          analysis = candidate;
+          break;
+        }
+      } catch(e2) {}
+      searchFrom = start + 1;
+    }
+
+    if (!analysis) throw new Error("Could not parse response — tap Try again.");
+    if (!analysis.leagues || analysis.leagues.length === 0) throw new Error("No leagues in response — tap Try again.");
+    saveCache(analysis);
+
+    setP(100);
+    loading.style.display = "none";
+    render(analysis);
+    updateLastUpdatedBanner(Date.now(), false);
+
+  } catch(e) {
+    clearInterval(ticker);
+    loading.style.display = "none";
+    results.innerHTML = "<div class='err-box'><span>⚠️</span><div>"
+      + "<p><strong style='color:#fca5a5'>" + esc(e.message) + "</strong></p>"
+      + "<p style='font-size:.72rem;color:#6b7280;margin-bottom:.5rem'>Tap KEYS to check your Anthropic key is correct.</p>"
+      + "<button class='btn-retry' onclick='runAnalysis()'>Try again</button>"
+      + "</div></div>";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function render(a) {
+  var res = document.getElementById("results");
+  var totalPicks = (a.leagues||[]).reduce(function(n,l){ return n + (l.picks ? l.picks.length : 0); }, 0);
+
+  var html = "<div class='stats-bar'>"
+    + "<div><div class='stat-label'>Leagues</div><div class='stat-val'>" + (a.leagues ? a.leagues.length : 0) + "</div></div>"
+    + "<div><div class='stat-label'>Picks</div><div class='stat-val'>" + totalPicks + "</div></div>"
+    + "<div><div class='stat-label'>Live as of</div><div class='stat-val'>" + new Date().toLocaleDateString("en-GB",{day:"numeric",month:"short"}) + "</div></div>"
+    + "</div>";
+
+  (a.leagues||[]).forEach(function(lg, li) {
+    html += "<div class='league-section'>"
+      + "<div class='league-hdr' onclick='toggleLg(" + li + ")'>"
+      + "<span class='lg-flag'>" + (lg.flag||"") + "</span>"
+      + "<span class='lg-name cond'>" + esc(lg.league) + "</span>"
+      + "<span class='lg-chev' id='lc-" + li + "'>▲</span></div>";
+    if (lg.context) html += "<p class='lg-ctx'>" + esc(lg.context) + "</p>";
+    html += "<div id='lb-" + li + "'>";
+
+    (lg.picks||[]).forEach(function(pick, pi) {
+      var bid = "pb-" + li + "-" + pi;
+      var cid = "pc-" + li + "-" + pi;
+      var isOpen = pi === 0;
+
+      // Build form strip
+      var formHtml = "";
+      if (pick.form && pick.form.length > 0) {
+        formHtml += "<div class='form-section'>"
+          + "<div class='form-label'>Last 5 — " + esc(pick.pickTeam) + "</div>"
+          + "<div class='form-strip'>";
+        pick.form.forEach(function(g) {
+          var resClass = g.result === "W" ? "res-w" : g.result === "D" ? "res-d" : "res-l";
+          formHtml += "<div class='form-game'>"
+            + "<div class='form-result " + resClass + "'>" + esc(g.result) + "</div>"
+            + "<div class='form-score'>" + esc(g.score||"") + "</div>"
+            + "<div class='form-xg'>xG " + (g.xg !== undefined ? parseFloat(g.xg).toFixed(1) : "?") + "</div>"
+            + "<div class='form-xg'>⚽ " + (g.actual !== undefined ? g.actual : "?") + "</div>"
+            + "</div>";
+        });
+        formHtml += "</div></div>";
+      }
+
+      html += "<div class='pick-card'>"
+        + "<div class='pick-hdr' onclick='togglePick(\"" + bid + "\",\"" + cid + "\")'>"
+        + "<div class='pick-num'>" + (pi+1) + "</div>"
+        + "<div class='pick-info'>"
+        + "<div class='matchup'>" + esc(pick.home) + " <span style='color:var(--muted)'>vs</span> " + esc(pick.away) + "</div>"
+        + "<div class='kickoff'>" + esc(pick.date) + " · " + esc(pick.time) + "</div>"
+        + "</div>"
+        + "<div class='pick-right'>"
+        + "<span class='conf " + (pick.confidence === "High" ? "conf-h" : "conf-m") + "'>" + esc(pick.confidence||"") + "</span>"
+        + "<div class='pick-chev' id='" + cid + "'>" + (isOpen ? "▲" : "▼") + "</div>"
+        + "</div></div>"
+        + "<div class='pick-body' id='" + bid + "' style='display:" + (isOpen ? "block" : "none") + "'>"
+        + "<div class='pick-target'>🎯 " + esc(pick.pickTeam) + " to score"
+        + (pick.xg ? "<span class='xg-badge'>xG " + parseFloat(pick.xg).toFixed(2) + "</span>" : "")
+        + "</div>"
+        + formHtml
+        + "<p class='pick-reason'>" + esc(pick.reason) + "</p>"
+        + "<div class='tags'>" + (pick.tags||[]).map(function(t){ return "<span class='tag " + tc(t) + "'>" + esc(t) + "</span>"; }).join("") + "</div>"
+        + "</div></div>";
+    });
+    html += "</div></div>";
+  });
+
+  html += "<p class='footer'>Scout · Powered by Claude with web search · Personal use only</p>";
+  res.innerHTML = html;
+}
+
+function toggleLg(li) {
+  var b = document.getElementById("lb-" + li);
+  var c = document.getElementById("lc-" + li);
+  var h = b.style.display === "none";
+  b.style.display = h ? "block" : "none";
+  c.textContent   = h ? "▲" : "▼";
+}
+function togglePick(bid, cid) {
+  var b = document.getElementById(bid);
+  var c = document.getElementById(cid);
+  var o = b.style.display !== "none";
+  b.style.display = o ? "none" : "block";
+  c.textContent   = o ? "▼" : "▲";
+}
+function tc(t) {
+  t = (t||"").toLowerCase();
+  if (t.indexOf("title")    > -1) return "t-title";
+  if (t.indexOf("relega")   > -1) return "t-rel";
+  if (t.indexOf("playoff")  > -1) return "t-play";
+  if (t.indexOf("european") > -1 || t.indexOf("europe") > -1) return "t-euro";
+  if (t.indexOf("form")     > -1 || t.indexOf("fire")   > -1) return "t-form";
+  if (t.indexOf("must")     > -1 || t.indexOf("despera") > -1) return "t-must";
+  if (t.indexOf("defenc")   > -1 || t.indexOf("defens")  > -1) return "t-def";
+  return "t-dflt";
+}
+function esc(s) {
+  return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+</script>
+</body>
+</html>
