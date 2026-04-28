@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SCOUT · Daily Football Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#080b10;--surface:#0e1219;--card:#131820;--border:#1c2333;
+  --accent:#3b82f6;--accent2:#1d4ed8;
+  --text:#f1f5f9;--muted:#64748b;--subtle:#1e293b;
+}
+body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;min-height:100vh}
+.cond{font-family:'Barlow Condensed',sans-serif}
+
+/* ── SETUP ── */
+#setup{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:1.5rem}
+.setup-box{width:100%;max-width:400px}
+.logo-area{text-align:center;margin-bottom:2rem}
+.ball{font-size:3rem;display:block;margin-bottom:.5rem;animation:bob 2s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.logo-title{font-family:'Barlow Condensed',sans-serif;font-size:3.5rem;letter-spacing:.12em;color:var(--text);line-height:1}
+.logo-sub{color:var(--muted);font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;margin-top:.4rem}
+.setup-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:1.75rem}
+.field-label{color:var(--muted);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;margin-bottom:.4rem;display:block}
+.field-input{width:100%;background:#080b10;border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-family:'Barlow',sans-serif;font-size:.875rem;outline:none;transition:border-color .2s;margin-bottom:.35rem}
+.field-input:focus{border-color:var(--accent)}
+.field-note{color:#4b5563;font-size:.68rem;margin-bottom:1.1rem;line-height:1.5}
+.field-note a{color:var(--accent);text-decoration:none}
+.save-row{display:flex;align-items:center;gap:.5rem;margin:.5rem 0 1rem}
+.save-row input{accent-color:var(--accent);width:15px;height:15px;cursor:pointer;flex-shrink:0}
+.save-row label{color:var(--muted);font-size:.8rem;cursor:pointer}
+.btn-launch{width:100%;background:var(--accent);border:none;border-radius:8px;padding:13px;color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:1rem;letter-spacing:.12em;cursor:pointer;transition:background .2s}
+.btn-launch:hover{background:var(--accent2)}
+.setup-err{color:#fca5a5;font-size:.75rem;margin:.4rem 0;min-height:1rem}
+
+/* ── APP ── */
+#app{display:none;flex-direction:column;min-height:100vh}
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:.85rem 1.1rem;display:flex;align-items:center;gap:.75rem;position:sticky;top:0;z-index:20}
+.hdr-title{font-family:'Barlow Condensed',sans-serif;font-size:1.5rem;letter-spacing:.1em;line-height:1;flex:1}
+.hdr-sub{font-size:.62rem;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-top:1px}
+.btn-refresh{background:var(--accent);border:none;border-radius:7px;color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:.85rem;letter-spacing:.1em;padding:7px 14px;cursor:pointer;white-space:nowrap;transition:background .15s}
+.btn-refresh:hover{background:var(--accent2)}
+.btn-refresh:disabled{background:#1e293b;color:var(--muted);cursor:not-allowed}
+.btn-keys{background:transparent;border:1px solid var(--border);border-radius:7px;color:var(--muted);font-size:.75rem;padding:7px 10px;cursor:pointer;font-family:'Barlow',sans-serif;white-space:nowrap}
+.btn-keys:hover{border-color:var(--accent);color:var(--accent)}
+main{flex:1;max-width:660px;width:100%;margin:0 auto;padding:1.2rem 1rem 3rem}
+
+/* ── LOADING ── */
+#loading{display:none;flex-direction:column;align-items:center;padding:3.5rem 1rem;text-align:center}
+.spin{font-size:2.5rem;animation:spin 1.1s linear infinite;display:block;margin-bottom:1.25rem}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.load-title{font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;letter-spacing:.1em;color:var(--accent);margin-bottom:.4rem}
+.load-stage{color:var(--muted);font-size:.75rem;letter-spacing:.06em;margin-bottom:1rem;max-width:280px;line-height:1.6}
+.prog-track{width:240px;height:3px;background:var(--subtle);border-radius:4px;overflow:hidden;margin-bottom:.5rem}
+.prog-bar{height:100%;background:linear-gradient(90deg,var(--accent),#6366f1);border-radius:4px;width:0%;transition:width .5s ease}
+.prog-pct{color:#374151;font-size:.65rem}
+
+/* ── RESULTS ── */
+.stats-bar{display:flex;gap:1.25rem;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.9rem 1.1rem;margin-bottom:1.5rem;flex-wrap:wrap}
+.stat-label{color:var(--muted);font-size:.62rem;letter-spacing:.12em;text-transform:uppercase}
+.stat-val{font-family:'Barlow Condensed',sans-serif;font-size:1.6rem;color:var(--text);line-height:1.1}
+
+.league-section{margin-bottom:2rem}
+.league-hdr{display:flex;align-items:center;gap:.6rem;margin-bottom:.85rem;padding-bottom:.6rem;border-bottom:1px solid var(--border);cursor:pointer;user-select:none}
+.lg-flag{font-size:1.1rem}
+.lg-name{font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;letter-spacing:.07em;color:var(--text)}
+.lg-chev{margin-left:auto;color:var(--muted);font-size:.72rem}
+.lg-ctx{color:#4b5563;font-size:.75rem;margin-bottom:.75rem;line-height:1.6;padding-left:.2rem}
+
+.pick-card{background:var(--card);border:1px solid var(--border);border-radius:11px;margin-bottom:.6rem;overflow:hidden;transition:border-color .15s}
+.pick-card:hover{border-color:#2d3748}
+.pick-hdr{padding:12px 14px;display:flex;align-items:center;gap:10px;cursor:pointer}
+.pick-num{width:24px;height:24px;border-radius:50%;background:var(--subtle);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:'Barlow Condensed',sans-serif;font-size:.75rem;color:var(--accent)}
+.pick-info{flex:1;min-width:0}
+.matchup{font-size:.88rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.kickoff{font-size:.68rem;color:var(--muted);margin-top:2px}
+.pick-right{text-align:right;flex-shrink:0}
+.conf{font-family:'Barlow Condensed',sans-serif;font-size:.68rem;letter-spacing:.08em;padding:2px 7px;border-radius:4px;display:block;margin-bottom:3px}
+.conf-h{background:#052e16;color:#6ee7b7;border:1px solid #065f46}
+.conf-m{background:#1c1107;color:#fcd34d;border:1px solid #92400e}
+.pick-chev{color:var(--muted);font-size:.68rem}
+
+.pick-body{padding:0 14px 14px;border-top:1px solid var(--border)}
+.pick-target{display:inline-block;background:#0f172a;color:#93c5fd;font-size:.75rem;padding:4px 10px;border-radius:6px;margin:10px 0 8px;border:1px solid #1e3a5f}
+.pick-reason{color:#94a3b8;font-size:.8rem;line-height:1.8;margin-bottom:10px}
+.tags{display:flex;flex-wrap:wrap;gap:5px}
+.tag{font-size:.63rem;padding:2px 8px;border-radius:999px}
+.t-title{background:#1c1107;color:#fcd34d;border:1px solid #78350f}
+.t-rel{background:#1a0505;color:#fca5a5;border:1px solid #7f1d1d}
+.t-play{background:#1a1035;color:#c4b5fd;border:1px solid #4c1d95}
+.t-euro{background:#0c1a2e;color:#93c5fd;border:1px solid #1e3a5f}
+.t-form{background:#052e16;color:#6ee7b7;border:1px solid #065f46}
+.t-must{background:#1c0f00;color:#fdba74;border:1px solid #7c2d12}
+.t-def{background:#1f0a1a;color:#f9a8d4;border:1px solid #831843}
+.t-dflt{background:var(--subtle);color:var(--muted);border:1px solid var(--border)}
+
+/* table mini */
+.mini-table{width:100%;border-collapse:collapse;margin-bottom:8px;font-size:.72rem}
+.mini-table th{color:var(--muted);font-weight:400;padding:3px 6px;text-align:left;border-bottom:1px solid var(--border)}
+.mini-table td{padding:4px 6px;color:#94a3b8;border-bottom:1px solid #0f1520}
+.mini-table tr.highlight td{color:var(--text);background:#1a2035}
+.mini-table .pos{color:var(--muted);width:24px}
+.mini-table .pts{font-weight:500;color:var(--accent)}
+
+.err-box{background:#1a0505;border:1px solid #7f1d1d;border-radius:10px;padding:1rem 1.1rem;margin-bottom:1.2rem;display:flex;gap:.75rem;align-items:flex-start}
+.err-box p{color:#fca5a5;font-size:.8rem;line-height:1.6;margin-bottom:.4rem}
+.btn-retry{background:#7f1d1d;border:none;border-radius:6px;color:#fca5a5;font-size:.72rem;padding:5px 12px;cursor:pointer}
+
+.footer{text-align:center;color:#1e293b;font-size:.6rem;letter-spacing:.1em;padding-top:.5rem;text-transform:uppercase}
+</style>
+</head>
+<body>
+
+<!-- ═══ SETUP ═══ -->
+<div id="setup">
+  <div class="setup-box">
+    <div class="logo-area">
+      <span class="ball">⚽</span>
+      <div class="logo-title cond">SCOUT</div>
+      <div class="logo-sub">Live scoring intelligence · 6 leagues</div>
+    </div>
+    <div class="setup-card">
+      <label class="field-label">Football-data.org key</label>
+      <input id="fd-key" class="field-input" type="text" placeholder="Your free API key" autocomplete="off" spellcheck="false"/>
+      <p class="field-note">Free at <a href="https://www.football-data.org/client/register" target="_blank">football-data.org/client/register</a> — check your email for it.</p>
+
+      <label class="field-label">Anthropic key</label>
+      <input id="ant-key" class="field-input" type="password" placeholder="sk-ant-api03-…" autocomplete="off" spellcheck="false"/>
+      <p class="field-note">From <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a> → API Keys. Each refresh costs ~2p.</p>
+
+      <div class="save-row">
+        <input type="checkbox" id="remember" checked/>
+        <label for="remember">Remember keys on this device</label>
+      </div>
+      <div id="setup-err" class="setup-err"></div>
+      <button class="btn-launch" onclick="launch()">LAUNCH SCOUT →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ APP ═══ -->
+<div id="app">
+  <header>
+    <div style="flex:1;min-width:0">
+      <div class="hdr-title cond">⚽ SCOUT</div>
+      <div class="hdr-sub" id="last-updated">—</div>
+    </div>
+    <button class="btn-refresh" id="refresh-btn" onclick="runAnalysis()">↻ REFRESH</button>
+    <button class="btn-keys" onclick="goSetup()">KEYS</button>
+  </header>
+  <main>
+    <div id="loading">
+      <span class="spin">⚽</span>
+      <div class="load-title cond" id="load-title">FETCHING LIVE DATA</div>
+      <div class="load-stage" id="load-stage">Connecting to football-data.org…</div>
+      <div class="prog-track"><div class="prog-bar" id="prog"></div></div>
+      <div class="prog-pct" id="prog-pct">0%</div>
+    </div>
+    <div id="results"></div>
+  </main>
+</div>
+
+<script>
+// ── league config ─────────────────────────────────────────────────────────────
+const LEAGUES = [
+  { id:"PL",  name:"Premier League", flag:"🏴󠁧󠁢󠁥󠁮󠁧󠁿", country:"England" },
+  { id:"ELC", name:"Championship",   flag:"🏴󠁧󠁢󠁥󠁮󠁧󠁿", country:"England" },
+  { id:"PD",  name:"La Liga",        flag:"🇪🇸", country:"Spain"   },
+  { id:"BL1", name:"Bundesliga",     flag:"🇩🇪", country:"Germany" },
+  { id:"FL1", name:"Ligue 1",        flag:"🇫🇷", country:"France"  },
+  { id:"PPL", name:"Primeira Liga",  flag:"🇵🇹", country:"Portugal"},
+];
+
+let fdKey = "", antKey = "";
+
+// ── boot ──────────────────────────────────────────────────────────────────────
+window.addEventListener("DOMContentLoaded", () => {
+  const sf = localStorage.getItem("scout_fd");
+  const sa = localStorage.getItem("scout_ant");
+  if (sf && sa) {
+    fdKey = sf; antKey = sa;
+    document.getElementById("fd-key").value  = sf;
+    document.getElementById("ant-key").value = sa;
+    showApp(); runAnalysis();
+  }
+});
+
+function launch() {
+  const fd  = document.getElementById("fd-key").value.trim();
+  const ant = document.getElementById("ant-key").value.trim();
+  const err = document.getElementById("setup-err");
+  if (!fd)  { err.textContent = "Please enter your football-data.org key."; return; }
+  if (!ant) { err.textContent = "Please enter your Anthropic key."; return; }
+  if (!ant.startsWith("sk-")) { err.textContent = "Anthropic keys start with sk-ant-… — check you copied it correctly."; return; }
+  err.textContent = "";
+  fdKey = fd; antKey = ant;
+  if (document.getElementById("remember").checked) {
+    localStorage.setItem("scout_fd",  fd);
+    localStorage.setItem("scout_ant", ant);
+  }
+  showApp(); runAnalysis();
+}
+
+function showApp()  { document.getElementById("setup").style.display="none"; document.getElementById("app").style.display="flex"; }
+function goSetup()  { document.getElementById("app").style.display="none";   document.getElementById("setup").style.display="flex"; }
+
+// ── progress ──────────────────────────────────────────────────────────────────
+function setP(pct, stage, title) {
+  const p = Math.min(Math.round(pct), 100);
+  document.getElementById("prog").style.width = p + "%";
+  document.getElementById("prog-pct").textContent = p + "%";
+  if (stage) document.getElementById("load-stage").textContent = stage;
+  if (title) document.getElementById("load-title").textContent = title;
+}
+
+// ── football-data.org helpers ─────────────────────────────────────────────────
+async function fdFetch(path) {
+  const r = await fetch(`https://api.football-data.org/v4${path}`, {
+    headers: { "X-Auth-Token": fdKey }
+  });
+  if (r.status === 403) throw new Error("Football-data.org key rejected — check it in KEYS.");
+  if (r.status === 429) throw new Error("Football-data.org rate limit hit — wait a minute then refresh.");
+  if (!r.ok) throw new Error(`Football-data.org error ${r.status} for ${path}`);
+  return r.json();
+}
+
+async function getFixtures(lgId) {
+  const today = new Date();
+  const end   = new Date(); end.setDate(today.getDate() + 8);
+  const fmt   = d => d.toISOString().split("T")[0];
+  const d = await fdFetch(`/competitions/${lgId}/matches?status=SCHEDULED&dateFrom=${fmt(today)}&dateTo=${fmt(end)}`);
+  return (d.matches || []).slice(0, 15).map(m => ({
+    home: m.homeTeam?.name || "TBC",
+    away: m.awayTeam?.name || "TBC",
+    date: new Date(m.utcDate).toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"}),
+    time: new Date(m.utcDate).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}),
+    utc:  m.utcDate,
+  }));
+}
+
+async function getStandings(lgId) {
+  try {
+    const d = await fdFetch(`/competitions/${lgId}/standings`);
+    const table = d.standings?.find(s => s.type === "TOTAL")?.table || [];
+    return table.map(t => ({
+      pos:    t.position,
+      team:   t.team.name,
+      played: t.playedGames,
+      won:    t.won,
+      drawn:  t.draw,
+      lost:   t.lost,
+      gf:     t.goalsFor,
+      ga:     t.goalsAgainst,
+      gd:     t.goalDifference,
+      pts:    t.points,
+      form:   t.form || "",
+    }));
+  } catch { return []; }
+}
+
+// ── Claude call ───────────────────────────────────────────────────────────────
+async function askClaude(leaguesBatch) {
+  const today = new Date().toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+
+  const prompt = `Today is ${today}.
+
+You are an expert football analyst. Below is LIVE data fetched right now from football-data.org — real upcoming fixtures and real current standings for ${leaguesBatch.length} leagues.
+
+For each league, pick the 3 fixtures most likely to see goals, specifically where ONE team is highly likely to score. Use the standings to assess: league position, points gap, what's at stake (title/promotion/relegation/playoffs/Europe), and form. Cross-reference with the actual upcoming fixtures listed.
+
+Return ONLY valid compact JSON, no markdown, no text outside the JSON:
+{"leagues":[{"league":"name","flag":"emoji","context":"one sentence on the key battle in this league right now","standings_snippet":[{"pos":1,"team":"name","pts":0},{"pos":2,"team":"name","pts":0}],"picks":[{"home":"exact name from fixtures","away":"exact name from fixtures","date":"as in data","time":"as in data","pickTeam":"team name","confidence":"High or Medium","reason":"3 sentences: position + what they need, opponent weakness from table, recent form from their W/D/L record","tags":["2-3 tags"]}]}]}
+
+Tag options: title race, relegation fight, playoff push, European push, form on fire, must-win, poor defence, home fortress, nothing to lose, top vs bottom, desperation
+
+LIVE DATA:
+${JSON.stringify(leaguesBatch, null, 1)}`;
+
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": antKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 8000,
+      messages: [{ role:"user", content: prompt }],
+    }),
+  });
+
+  if (r.status === 401) throw new Error("Anthropic key rejected — tap KEYS to update it.");
+  if (r.status === 429) throw new Error("Anthropic rate limit — wait a moment and try again.");
+  if (r.status === 402) throw new Error("No Anthropic credits left — add credit at console.anthropic.com.");
+  if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e?.error?.message || `Anthropic error ${r.status}`); }
+
+  const data = await r.json();
+  const raw  = (data.content?.[0]?.text || "").replace(/```json|```/g,"").trim();
+
+  // find first { and last } to be safe
+  const start = raw.indexOf("{");
+  const end   = raw.lastIndexOf("}");
+  if (start === -1 || end === -1) throw new Error("Claude returned unexpected output — try refreshing.");
+  return JSON.parse(raw.slice(start, end + 1));
+}
+
+// ── main flow ─────────────────────────────────────────────────────────────────
+async function runAnalysis() {
+  const btn     = document.getElementById("refresh-btn");
+  const loading = document.getElementById("loading");
+  const results = document.getElementById("results");
+
+  btn.disabled = true;
+  results.innerHTML = "";
+  loading.style.display = "flex";
+  setP(2, "Connecting to football-data.org…", "FETCHING LIVE DATA");
+
+  try {
+    // Step 1 — fetch all fixtures + standings in parallel per league
+    const liveData = [];
+    for (let i = 0; i < LEAGUES.length; i++) {
+      const lg = LEAGUES[i];
+      setP(2 + (i / LEAGUES.length) * 38, `Fetching ${lg.name} fixtures & table…`);
+      const [fixtures, standings] = await Promise.all([
+        getFixtures(lg.id).catch(() => []),
+        getStandings(lg.id).catch(() => []),
+      ]);
+      liveData.push({ league: lg.name, flag: lg.flag, country: lg.country, fixtures, standings });
+    }
+
+    // Step 2 — split into 2 batches for Claude (3 leagues each)
+    setP(42, "Sending live data to Claude…", "GENERATING ANALYSIS");
+    const batchA = liveData.slice(0, 3);
+    const batchB = liveData.slice(3, 6);
+
+    // Tick progress while waiting
+    let pct = 44;
+    const ticker = setInterval(() => { pct = Math.min(pct + 0.8, 88); setP(pct); }, 500);
+
+    const [resA, resB] = await Promise.all([
+      askClaude(batchA),
+      askClaude(batchB),
+    ]);
+
+    clearInterval(ticker);
+    setP(96, "Rendering…", "ALMOST DONE");
+
+    const analysis = {
+      leagues: [...(resA.leagues || []), ...(resB.leagues || [])],
+    };
+
+    loading.style.display = "none";
+    render(analysis);
+    document.getElementById("last-updated").textContent =
+      "Live · Updated " + new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
+
+  } catch(e) {
+    loading.style.display = "none";
+    results.innerHTML = `<div class="err-box"><span>⚠️</span><div>
+      <p><strong style="color:#fca5a5">${esc(e.message)}</strong></p>
+      <p style="font-size:.72rem;color:#6b7280;margin-bottom:.5rem">If this keeps happening, tap KEYS to double-check both keys are correct.</p>
+      <button class="btn-retry" onclick="runAnalysis()">Try again</button>
+    </div></div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── render ─────────────────────────────────────────────────────────────────────
+function render(a) {
+  const res        = document.getElementById("results");
+  const totalPicks = (a.leagues||[]).reduce((n,l) => n + (l.picks?.length||0), 0);
+
+  let html = `<div class="stats-bar">
+    <div><div class="stat-label">Leagues</div><div class="stat-val">${a.leagues?.length||0}</div></div>
+    <div><div class="stat-label">Picks</div><div class="stat-val">${totalPicks}</div></div>
+    <div><div class="stat-label">Live as of</div><div class="stat-val">${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"short"})}</div></div>
+  </div>`;
+
+  (a.leagues||[]).forEach((lg, li) => {
+    html += `<div class="league-section">
+      <div class="league-hdr" onclick="toggleLg(${li})">
+        <span class="lg-flag">${lg.flag||""}</span>
+        <span class="lg-name cond">${esc(lg.league)}</span>
+        <span class="lg-chev" id="lc-${li}">▲</span>
+      </div>`;
+    if (lg.context) html += `<p class="lg-ctx">${esc(lg.context)}</p>`;
+    html += `<div id="lb-${li}">`;
+
+    (lg.picks||[]).forEach((pick, pi) => {
+      const bid = `pb-${li}-${pi}`;
+      const cid = `pc-${li}-${pi}`;
+      html += `<div class="pick-card">
+        <div class="pick-hdr" onclick="togglePick('${bid}','${cid}')">
+          <div class="pick-num">${pi+1}</div>
+          <div class="pick-info">
+            <div class="matchup">${esc(pick.home)} <span style="color:var(--muted)">vs</span> ${esc(pick.away)}</div>
+            <div class="kickoff">${esc(pick.date)} · ${esc(pick.time)}</div>
+          </div>
+          <div class="pick-right">
+            <span class="conf ${pick.confidence==="High"?"conf-h":"conf-m"}">${esc(pick.confidence||"")}</span>
+            <div class="pick-chev" id="${cid}">${pi===0?"▲":"▼"}</div>
+          </div>
+        </div>
+        <div class="pick-body" id="${bid}" style="display:${pi===0?"block":"none"}">
+          <div class="pick-target">🎯 ${esc(pick.pickTeam)} to score</div>
+          <p class="pick-reason">${esc(pick.reason)}</p>
+          <div class="tags">${(pick.tags||[]).map(t=>`<span class="tag ${tc(t)}">${esc(t)}</span>`).join("")}</div>
+        </div>
+      </div>`;
+    });
+
+    html += `</div></div>`;
+  });
+
+  html += `<p class="footer">Scout · Live data: football-data.org · Analysis: Claude · Personal use only</p>`;
+  res.innerHTML = html;
+}
+
+function toggleLg(li) {
+  const b = document.getElementById(`lb-${li}`);
+  const c = document.getElementById(`lc-${li}`);
+  const h = b.style.display==="none";
+  b.style.display = h?"block":"none";
+  c.textContent   = h?"▲":"▼";
+}
+function togglePick(bid, cid) {
+  const b = document.getElementById(bid);
+  const c = document.getElementById(cid);
+  const o = b.style.display!=="none";
+  b.style.display = o?"none":"block";
+  c.textContent   = o?"▼":"▲";
+}
+function tc(t) {
+  t=(t||"").toLowerCase();
+  if(t.includes("title"))                           return "t-title";
+  if(t.includes("relega"))                          return "t-rel";
+  if(t.includes("playoff"))                         return "t-play";
+  if(t.includes("european")||t.includes("europe"))  return "t-euro";
+  if(t.includes("form")||t.includes("fire"))        return "t-form";
+  if(t.includes("must")||t.includes("despera"))     return "t-must";
+  if(t.includes("defenc")||t.includes("defens"))    return "t-def";
+  return "t-dflt";
+}
+function esc(s){
+  return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+</script>
+</body>
+</html>
