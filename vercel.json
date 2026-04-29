@@ -1,7 +1,0 @@
-{
-  "functions": {
-    "api/football.js": {
-      "runtime": "edge"
-    }
-  }
-}
