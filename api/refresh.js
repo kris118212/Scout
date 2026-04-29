@@ -317,7 +317,7 @@ export default async function handler(req, res) {
 
 ${dataSummary}
 
-TASK: Select the 3 BEST fixtures for betting from the league above. Prioritise fixtures where:
+TASK: Select the 5 BEST fixtures for betting from the league above. Prioritise fixtures where:
 1. One team has clear scoring form (high avg goals scored, strong attack, weak opposition defence)
 2. Bookmaker odds are available — skip fixtures marked "NOT AVAILABLE"
 3. The pick team is likely to score based on league position, form, and matchup
@@ -385,7 +385,7 @@ STRICT RULES:
       leagues: allLeagues.length, 
       updatedAt: now.toISOString(),
       debug: { 
-        rawLengths: raws.map((r,i) => ({ league: leagueData[i]?.name, len: r?.length||0, preview: r?.slice(0,150)||"EMPTY" }))
+        rawLengths: raws.map((r,i) => ({ league: leagueData[i]?.name, len: r?.length||0, oddsCount: Object.keys(leagueData[i]?.oddsMap||{}).length, preview: r?.slice(0,150)||"EMPTY" }))
       }
     });
   } catch(err) {
