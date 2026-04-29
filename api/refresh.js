@@ -320,31 +320,14 @@ export default async function handler(req, res) {
         return `LEAGUE: ${lg.name} ${lg.flag}\nFIXTURES:\n${fxLines||"none"}\nTOP 6:\n${tableLines||"none"}\nBOTTOM 3:\n${botLines||"none"}`;
       }).join("\n\n---\n\n");
 
-      return `Today is ${today}. Fixtures window: ${today} to ${end14str}.
-
-You are an expert football betting analyst. Use the LIVE data, real bookmaker odds, and real injury/suspension data below.
+      return `Today: ${today}. Football betting analyst. Analyse this league and pick 3 best fixtures.
 
 ${dataSummary}
 
-TASK: For each league, pick up to 5 fixtures and provide betting analysis.
+Respond with ONLY this JSON structure (no markdown):
+{"leagues":[{"league":"NAME","flag":"FLAG","context":"brief","picks":[{"home":"H","away":"A","date":"D","time":"T","primary":{"pick":"H to Score","xg":1.5,"odds":"1.50","confidence":"High","reason":"2 sentences","injuries":"None"},"builders":[{"name":"H Win","odds":"1.80","confidence":"High","reason":"1 sentence"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"Med","reason":"1 sentence"},{"name":"BTTS","odds":"1.70","confidence":"Med","reason":"1 sentence"}],"combo":{"name":"Win+Goals","picks":["H Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"1 sentence"},"form":[{"result":"W","score":"2-0","xg":1.8,"actual":2}],"tags":["home form"]}]}]}
 
-Return ONLY raw JSON starting with {:
-{"leagues":[{"league":"name","flag":"emoji","context":"one sentence","picks":[{"home":"team","away":"team","date":"date","time":"time","primary":{"pick":"[Team] to Score","xg":1.8,"odds":"1.55","confidence":"High","reason":"3-4 sentences: explain why this team is likely to score — reference their recent scoring form, xG, key attackers, opponent defensive weaknesses, and any relevant injuries/suspensions","injuries":"list real injuries/suspensions from data above or None"},"builders":[{"name":"[Team] Win","odds":"1.60","confidence":"High","reason":"1-2 sentences"},{"name":"Over 0.5 Goals","odds":"1.15","confidence":"High","reason":"1-2 sentences"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"High","reason":"1-2 sentences"},{"name":"BTTS","odds":"1.70","confidence":"Medium","reason":"1-2 sentences"}],"combo":{"name":"Win + Goals","picks":["[Team] Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"2-3 sentences"},"form":[{"result":"W","score":"2-0","xg":2.1,"actual":2},{"result":"D","score":"1-1","xg":1.3,"actual":1},{"result":"W","score":"3-1","xg":2.4,"actual":3},{"result":"L","score":"0-1","xg":0.9,"actual":0},{"result":"W","score":"2-1","xg":1.7,"actual":2}],"tags":["tag1","tag2"]}]}]}
-
-RULES:
-- primary.pick MUST always be "[Team] to Score" e.g. "Arsenal to Score"
-- primary.odds: use ONLY the real "[Team]ToScore" odds explicitly shown in the data above (e.g. HomeToScore or AwayToScore). If NO ToScore odd is shown for this fixture, write "N/A" — NEVER invent or estimate an odds value
-- primary.reason: 3-4 sentences referencing scoring form, xG, key attackers, defensive weaknesses, injury impact
-- injuries: write "Not available"
-- builders: use real bookmaker odds from the data (H/D/A, BTTS, O0.5, O1.5)
-- builders MAY include Over 0.5 Goals (use O0.5 odd) and/or Over 1.5 Goals (use O1.5 odd)
-- NEVER suggest Over 2.5 Goals in builders or anywhere else
-- NEVER put "[Team] to Score" or any "to score" pick in builders — primary only
-- builders: 3-4 picks from Win/Double Chance, Over 0.5 Goals, Over 1.5 Goals, BTTS, or HT/FT
-- combo.picks: choose 2-3 from your builder picks
-- combo.odds: always write exactly "CALCULATE" — the server replaces this with mathematically accurate odds
-- form: 5 items most recent first
-- Return ONLY the raw JSON object — no markdown, no backticks, no code fences, no explanation text before or after the JSON`;
+Rules: primary.pick="[Team] to Score". Use real odds from data. injuries="Not available". combo.odds="CALCULATE". Raw JSON only.`;
     };
 
     // One league per call, staggered to stay within rate limits
