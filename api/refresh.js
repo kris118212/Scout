@@ -92,7 +92,6 @@ export default async function handler(req, res) {
     const fmt = d => d.toISOString().split("T")[0];
     const end14 = new Date(now); end14.setDate(now.getDate() + 14);
 
-    // Fetch trends
     let trendsMap = {};
     try {
       const tData = await fdFetch(`/trends/?dateFrom=${fmt(now)}&dateTo=${fmt(end14)}&window=5`);
@@ -103,7 +102,6 @@ export default async function handler(req, res) {
       });
     } catch(e) {}
 
-    // Fetch all league data in parallel
     const leagueData = await Promise.all(LEAGUES.map(async lg => {
       const [fixturesData, standingsData] = await Promise.all([
         fdFetch(`/competitions/${lg.id}/matches?dateFrom=${fmt(now)}&dateTo=${fmt(end14)}`).catch(() => ({})),
@@ -132,15 +130,15 @@ export default async function handler(req, res) {
       return { ...lg, fixtures, standings, trendMap: trendsMap };
     }));
 
-    // Generate Claude analysis in 3 batches
     const makePrompt = (batch) => {
       const today = now.toLocaleDateString("en-GB", {weekday:"long",day:"numeric",month:"long",year:"numeric"});
       const end14str = end14.toLocaleDateString("en-GB", {weekday:"short",day:"numeric",month:"long",year:"numeric"});
+
       const dataSummary = batch.map(lg => {
         const fxLines = lg.fixtures.slice(0, 10).map((f, i) => {
           const td = lg.trendMap?.[`${f.home}|${f.away}`];
           const trendStr = td
-            ? ` [Home:${td.home?.form||"?"} ${td.home?.avg_goals?.toFixed(1)||"?"}g BTTS:${td.home?.pct_bts!=null?Math.round(td.home.pct_bts*100)+"%":"?"} | Away:${td.away?.form||"?"} ${td.away?.avg_goals?.toFixed(1)||"?"}g BTTS:${td.away?.pct_bts!=null?Math.round(td.away.pct_bts*100)+"%":"?"}]`
+            ? ` [Home form:${td.home?.form||"?"} avg scored:${td.home?.avg_goals_scored?.toFixed(1)||"?"} BTTS:${td.home?.pct_bts!=null?Math.round(td.home.pct_bts*100)+"%":"?"} | Away form:${td.away?.form||"?"} avg scored:${td.away?.avg_goals_scored?.toFixed(1)||"?"} BTTS:${td.away?.pct_bts!=null?Math.round(td.away.pct_bts*100)+"%":"?"}]`
             : "";
           return `${i+1}. ${f.home} vs ${f.away} — ${f.date} ${f.time}${trendStr}`;
         }).join("\n");
@@ -153,7 +151,25 @@ export default async function handler(req, res) {
         return `LEAGUE: ${lg.name} ${lg.flag}\nFIXTURES:\n${fxLines||"none"}\nTOP 6:\n${tableLines||"none"}\nBOTTOM 3:\n${botLines||"none"}`;
       }).join("\n\n---\n\n");
 
-      return `Today is ${today}. Fixtures window: ${today} to ${end14str}.\n\nYou are a football analyst. LIVE data below.\n\n${dataSummary}\n\nTASK: For each league, pick up to 5 fixtures and provide betting analysis.\n\nReturn ONLY raw JSON starting with {:\n{"leagues":[{"league":"name","flag":"emoji","context":"one sentence","picks":[{"home":"team","away":"team","date":"date","time":"time","primary":{"pick":"team to score","xg":1.8,"odds":"1.55","confidence":"High","reason":"2 sentences","injuries":"key injuries or None"},"builders":[{"name":"[Team] to Score","odds":"1.35","confidence":"High"},{"name":"[Team] Win","odds":"1.60","confidence":"High"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"Medium"}],"combo":{"name":"Win + Over 1.5","picks":["[Team] Win","Over 1.5 Goals"],"odds":"2.20","reason":"brief"},"form":[{"result":"W","score":"2-0","xg":2.1,"actual":2},{"result":"D","score":"1-1","xg":1.3,"actual":1},{"result":"W","score":"3-1","xg":2.4,"actual":3},{"result":"L","score":"0-1","xg":0.9,"actual":0},{"result":"W","score":"2-1","xg":1.7,"actual":2}],"tags":["tag1","tag2"]}]}]}\n\nRULES:\n- ALWAYS include [Team] to Score as first builder pick\n- NEVER suggest Over 2.5 Goals — maximum Over 1.5 Goals\n- Builders: 1) Team to Score, 2) Win or Double Chance, 3) Over 1.5 or BTTS\n- Form: 5 items most recent first\n- No markdown fences`;
+      return `Today is ${today}. Fixtures window: ${today} to ${end14str}.
+
+You are an expert football betting analyst. Use the LIVE data and trend statistics below.
+
+${dataSummary}
+
+TASK: For each league, pick up to 5 fixtures and provide betting analysis.
+
+Return ONLY raw JSON starting with {:
+{"leagues":[{"league":"name","flag":"emoji","context":"one sentence","picks":[{"home":"team","away":"team","date":"date","time":"time","primary":{"pick":"[Team] to Score","xg":1.8,"odds":"1.55","confidence":"High","reason":"2 sentences","injuries":"key injuries or None"},"builders":[{"name":"[Team] Win","odds":"1.60","confidence":"High"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"High"},{"name":"BTTS","odds":"1.70","confidence":"Medium"}],"combo":{"name":"Win + Goals","picks":["[Team] Win","Over 1.5 Goals"],"odds":"2.35","reason":"brief reason"},"form":[{"result":"W","score":"2-0","xg":2.1,"actual":2},{"result":"D","score":"1-1","xg":1.3,"actual":1},{"result":"W","score":"3-1","xg":2.4,"actual":3},{"result":"L","score":"0-1","xg":0.9,"actual":0},{"result":"W","score":"2-1","xg":1.7,"actual":2}],"tags":["tag1","tag2"]}]}]}
+
+RULES:
+- primary.pick MUST always be "[Team] to Score" e.g. "Arsenal to Score"
+- NEVER put to score or over 0.5 in builders — primary only
+- NEVER suggest Over 2.5 Goals — maximum Over 1.5 Goals
+- builders: 3 picks that combine well — Win/Double Chance, Over 1.5, BTTS, or HT/FT
+- combo: ONE combination of 2-3 builder picks with a SINGLE combined odds value e.g. "2.80"
+- form: 5 items most recent first
+- No markdown fences`;
     };
 
     const [rawA, rawB, rawC] = await Promise.all([
@@ -176,11 +192,8 @@ export default async function handler(req, res) {
     const payload = {
       leagues: allLeagues,
       leagueData: leagueData.map(lg => ({
-        id: lg.id,
-        name: lg.name,
-        flag: lg.flag,
-        fixtures: lg.fixtures,
-        standings: lg.standings
+        id: lg.id, name: lg.name, flag: lg.flag,
+        fixtures: lg.fixtures, standings: lg.standings
       })),
       updatedAt: now.toISOString()
     };
