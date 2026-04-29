@@ -1,17 +1,4 @@
 {
-  "version": 2,
-  "builds": [
-    { "src": "api/football.js", "use": "@vercel/node" },
-    { "src": "api/refresh.js", "use": "@vercel/node" },
-    { "src": "api/data.js", "use": "@vercel/node" },
-    { "src": "api/claude.js", "use": "@vercel/node" }
-  ],
-  "routes": [
-    { "src": "/api/football/(.*)", "dest": "/api/football.js" },
-    { "src": "/api/refresh(.*)", "dest": "/api/refresh.js" },
-    { "src": "/api/data", "dest": "/api/data.js" },
-    { "src": "/api/claude", "dest": "/api/claude.js" }
-  ],
   "functions": {
     "api/refresh.js": { "maxDuration": 300 }
   },
