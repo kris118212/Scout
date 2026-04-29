@@ -311,7 +311,6 @@ export default async function handler(req, res) {
       }).join("\n\n---\n\n");
 
       // Use the flag from the league config, not from Claude
-      const lgFlag = batch[0]?.flag || "";
       const lgName = batch[0]?.name || "";
 
       return `Today is ${today}. You are an expert football betting analyst.
@@ -319,10 +318,10 @@ export default async function handler(req, res) {
 ${dataSummary}
 
 Pick up to 3 fixtures from the league above and return ONLY this JSON (no markdown, no explanation):
-{"leagues":[{"league":"${lgName}","flag":"${lgFlag}","context":"one sentence about the league situation","picks":[{"home":"TeamA","away":"TeamB","date":"Sat 2 May","time":"15:00","primary":{"pick":"TeamA to Score","xg":1.8,"odds":"1.55","confidence":"High","reason":"3 sentences on why this team will score — recent form, attackers, opponent defence","injuries":"Not available"},"builders":[{"name":"TeamA Win","odds":"1.75","confidence":"High","reason":"2 sentences"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"High","reason":"2 sentences"},{"name":"BTTS","odds":"1.80","confidence":"Medium","reason":"2 sentences"}],"combo":{"name":"Win + Goals","picks":["TeamA Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"2 sentences"},"form":[{"result":"W","score":"2-0","xg":2.1,"actual":2},{"result":"W","score":"1-0","xg":1.4,"actual":1},{"result":"D","score":"1-1","xg":1.2,"actual":1},{"result":"L","score":"0-2","xg":0.8,"actual":0},{"result":"W","score":"3-1","xg":2.3,"actual":3}],"tags":["home form","strong attack"]}]}]}
+{"leagues":[{"league":"${lgName}","flag":"PLACEHOLDER","context":"one sentence about the league situation","picks":[{"home":"TeamA","away":"TeamB","date":"Sat 2 May","time":"15:00","primary":{"pick":"TeamA to Score","xg":1.8,"odds":"1.55","confidence":"High","reason":"3 sentences on why this team will score — recent form, attackers, opponent defence","injuries":"Not available"},"builders":[{"name":"TeamA Win","odds":"1.75","confidence":"High","reason":"2 sentences"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"High","reason":"2 sentences"},{"name":"BTTS","odds":"1.80","confidence":"Medium","reason":"2 sentences"}],"combo":{"name":"Win + Goals","picks":["TeamA Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"2 sentences"},"form":[{"result":"W","score":"2-0","xg":2.1,"actual":2},{"result":"W","score":"1-0","xg":1.4,"actual":1},{"result":"D","score":"1-1","xg":1.2,"actual":1},{"result":"L","score":"0-2","xg":0.8,"actual":0},{"result":"W","score":"3-1","xg":2.3,"actual":3}],"tags":["home form","strong attack"]}]}]}
 
 Rules:
-- league and flag: use EXACTLY "${lgName}" and "${lgFlag}" — do not change these
+- league: use EXACTLY "${lgName}" — do not change this
 - primary.pick: always "[Team] to Score" using real HomeToScore or AwayToScore odds from data, or "N/A" if not shown
 - builders: use real H/D/A/BTTS/O0.5/O1.5 odds from data above
 - combo.odds: write "CALCULATE"
@@ -351,6 +350,7 @@ Rules:
       if (live) {
         lg.standings = live.standings;
         lg.cfg = live;
+        lg.flag = live.flag; // Always use config flag, never Claude-generated
       }
     });
 
