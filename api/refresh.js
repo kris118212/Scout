@@ -38,7 +38,7 @@ async function callClaude(prompt, retries = 2) {
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
-          max_tokens: 8000,
+          max_tokens: 16000,
           tools: [{ type: "web_search_20250305", name: "web_search" }],
           messages: [{ role: "user", content: prompt }]
         })
@@ -46,7 +46,7 @@ async function callClaude(prompt, retries = 2) {
       const data = await r.json();
 
       if (data.error) {
-        if (attempt === retries) return "";
+        if (attempt === retries) return "ERROR:" + JSON.stringify(data.error);
         continue;
       }
 
@@ -389,7 +389,18 @@ RULES:
     await kvSet("scout_data", JSON.stringify(payload));
     await kvSet("scout_updated", now.toISOString());
 
-    res.status(200).json({ ok: true, leagues: allLeagues.length, updatedAt: now.toISOString() });
+    res.status(200).json({ 
+      ok: true, 
+      leagues: allLeagues.length, 
+      updatedAt: now.toISOString(),
+      debug: { 
+        rawLengths: { a: rawA?.length||0, b: rawB?.length||0, c: rawC?.length||0, d: rawD?.length||0 },
+        previews: { 
+          a: rawA?.slice(0,300)||"EMPTY", 
+          b: rawB?.slice(0,300)||"EMPTY"
+        }
+      }
+    });
   } catch(err) {
     console.error(err);
     res.status(500).json({ error: err.message });
