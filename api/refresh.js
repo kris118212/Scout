@@ -26,30 +26,59 @@ async function afFetch(path) {
 async function callClaude(prompt, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const r = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": process.env.ANTHROPIC_KEY,
-          "anthropic-version": "2023-06-01"
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 12000,
-          tools: [{ type: "web_search_20250305", name: "web_search" }],
-          tool_choice: { type: "auto" },
-          messages: [{ role: "user", content: prompt }]
-        })
-      });
-      const data = await r.json();
-      // Find last text block (handles cases where tool_use blocks appear)
-      const blocks = data.content || [];
-      const textBlock = [...blocks].reverse().find(b => b.type === "text");
-      const text = textBlock?.text || "";
-      if (text.length > 100) return text;
+      // Multi-turn loop to handle web_search tool_use blocks
+      const messages = [{ role: "user", content: prompt }];
+      let finalText = "";
+
+      for (let turn = 0; turn < 8; turn++) {
+        const r = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": process.env.ANTHROPIC_KEY,
+            "anthropic-version": "2023-06-01"
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 8000,
+            tools: [{ type: "web_search_20250305", name: "web_search" }],
+            messages
+          })
+        });
+        const data = await r.json();
+
+        if (data.error) {
+          console.error("Claude API error:", JSON.stringify(data.error));
+          break;
+        }
+
+        const blocks = data.content || [];
+
+        // Collect any text from this turn
+        const textBlocks = blocks.filter(b => b.type === "text");
+        if (textBlocks.length) {
+          finalText = textBlocks.map(b => b.text).join("");
+        }
+
+        // If stop_reason is end_turn or no tool_use blocks, we're done
+        const toolUseBlocks = blocks.filter(b => b.type === "tool_use");
+        if (data.stop_reason === "end_turn" || !toolUseBlocks.length) break;
+
+        // Otherwise, append assistant turn and send tool results back
+        messages.push({ role: "assistant", content: blocks });
+        const toolResults = toolUseBlocks.map(tu => ({
+          type: "tool_result",
+          tool_use_id: tu.id,
+          content: tu.input?.query ? `Search results for: ${tu.input.query}` : "No results"
+        }));
+        messages.push({ role: "user", content: toolResults });
+      }
+
+      if (finalText.length > 100) return finalText;
       if (attempt < retries) continue;
-      return text;
+      return finalText;
     } catch(e) {
+      console.error("callClaude error:", e.message);
       if (attempt === retries) throw e;
     }
   }
@@ -416,10 +445,10 @@ RULES:
         })),
         rawLengths: { a: rawA?.length || 0, b: rawB?.length || 0, c: rawC?.length || 0, d: rawD?.length || 0 },
         rawPreviews: {
-          a: rawA?.slice(0, 200) || "",
-          b: rawB?.slice(0, 200) || "",
-          c: rawC?.slice(0, 200) || "",
-          d: rawD?.slice(0, 200) || ""
+          a: rawA?.slice(0, 500) || "EMPTY",
+          b: rawB?.slice(0, 500) || "EMPTY",
+          c: rawC?.slice(0, 500) || "EMPTY",
+          d: rawD?.slice(0, 500) || "EMPTY"
         }
       }
     });
