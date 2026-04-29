@@ -307,7 +307,7 @@ export default async function handler(req, res) {
 
 
 
-          return `${i+1}. ${f.home} vs ${f.away} — ${f.date} ${f.time}${trendStr}${oddsStr}${injStr}`;
+          return `${i+1}. ${f.home} vs ${f.away} — ${f.date} ${f.time}${oddsStr}`;
         }).join("\n");
 
         const tableLines = lg.standings.slice(0, 6).map(t =>
