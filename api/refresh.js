@@ -46,6 +46,22 @@ async function kvSet(key, value) {
   return r.json();
 }
 
+function mapStandings(raw) {
+  return (raw || []).map(t => ({
+    pos: t.position,
+    team: t.team?.shortName || t.team?.name || "",
+    played: t.playedGames,
+    won: t.won,
+    drawn: t.draw,
+    lost: t.lost,
+    gf: t.goalsFor,
+    ga: t.goalsAgainst,
+    gd: t.goalDifference,
+    pts: t.points,
+    form: t.form || ""
+  }));
+}
+
 function parseLeagues(raw) {
   const txt = raw.replace(/```json|```/g, "").trim();
   const s = txt.indexOf("{"), e = txt.lastIndexOf("}");
@@ -120,14 +136,14 @@ export default async function handler(req, res) {
           status: m.status
         }));
 
-      let standings = [];
+      let rawStandings = [];
       if (standingsData.standings) {
         for (const s of standingsData.standings) {
-          if (s.type === "TOTAL") { standings = s.table || []; break; }
+          if (s.type === "TOTAL") { rawStandings = s.table || []; break; }
         }
       }
 
-      return { ...lg, fixtures, standings, trendMap: trendsMap };
+      return { ...lg, fixtures, standings: mapStandings(rawStandings), trendMap: trendsMap };
     }));
 
     const makePrompt = (batch) => {
@@ -143,10 +159,10 @@ export default async function handler(req, res) {
           return `${i+1}. ${f.home} vs ${f.away} — ${f.date} ${f.time}${trendStr}`;
         }).join("\n");
         const tableLines = lg.standings.slice(0, 6).map(t =>
-          `${t.position}. ${t.team?.shortName||t.team?.name} (${t.points}pts GD:${t.goalDifference})`
+          `${t.pos}. ${t.team} (${t.pts}pts GD:${t.gd})`
         ).join("\n");
         const botLines = lg.standings.slice(-3).map(t =>
-          `${t.position}. ${t.team?.shortName||t.team?.name} (${t.points}pts - relegation)`
+          `${t.pos}. ${t.team} (${t.pts}pts - relegation)`
         ).join("\n");
         return `LEAGUE: ${lg.name} ${lg.flag}\nFIXTURES:\n${fxLines||"none"}\nTOP 6:\n${tableLines||"none"}\nBOTTOM 3:\n${botLines||"none"}`;
       }).join("\n\n---\n\n");
@@ -187,7 +203,10 @@ RULES:
 
     allLeagues.forEach(lg => {
       const live = leagueData.find(r => r.name === lg.league);
-      if (live) { lg.standings = live.standings; lg.cfg = live; }
+      if (live) {
+        lg.standings = live.standings;
+        lg.cfg = live;
+      }
     });
 
     const payload = {
