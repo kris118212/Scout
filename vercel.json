@@ -1,1 +1,9 @@
-{}
+{
+  "version": 2,
+  "builds": [
+    { "src": "api/football.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/api/football/(.*)", "dest": "/api/football.js" }
+  ]
+}
