@@ -351,13 +351,16 @@ RULES:
 - Return ONLY the raw JSON object — no markdown, no backticks, no code fences, no explanation text before or after the JSON`;
     };
 
+    // Stagger calls by 20s to stay within 30k tokens/min rate limit
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
     let rawA = "", rawB = "", rawC = "", rawD = "";
-    [rawA, rawB, rawC, rawD] = await Promise.all([
-      callClaude(makePrompt(leagueData.slice(0, 2))),
-      callClaude(makePrompt(leagueData.slice(2, 4))),
-      callClaude(makePrompt(leagueData.slice(4, 6))),
-      callClaude(makePrompt(leagueData.slice(6)))
-    ]);
+    rawA = await callClaude(makePrompt(leagueData.slice(0, 2)));
+    await sleep(20000);
+    rawB = await callClaude(makePrompt(leagueData.slice(2, 4)));
+    await sleep(20000);
+    rawC = await callClaude(makePrompt(leagueData.slice(4, 6)));
+    await sleep(20000);
+    rawD = await callClaude(makePrompt(leagueData.slice(6)));
 
     let allLeagues = [
       ...parseLeagues(rawA),
