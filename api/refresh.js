@@ -348,7 +348,7 @@ RULES:
 - combo.picks: choose 2-3 from your builder picks
 - combo.odds: always write exactly "CALCULATE" — the server replaces this with mathematically accurate odds
 - form: 5 items most recent first
-- Return ONLY the raw JSON object — no markdown, no backticks, no ```json, no explanation text before or after the JSON`;
+- Return ONLY the raw JSON object — no markdown, no backticks, no code fences, no explanation text before or after the JSON`;
     };
 
     let rawA = "", rawB = "", rawC = "", rawD = "";
