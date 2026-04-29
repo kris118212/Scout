@@ -79,25 +79,58 @@ function mapStandings(raw) {
   }));
 }
 
+// Normalise a team name to help fuzzy-match across data sources.
+function normaliseTeam(name) {
+  return (name || "")
+    .toLowerCase()
+    .replace(/\bfc\b|\baf\b|\bsc\b|\bac\b|\bsv\b|\bfk\b|\bsk\b/g, "")
+    .replace(/[^a-z0-9 ]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Returns true if two team name strings refer to the same club.
+function teamsMatch(a, b) {
+  if (!a || !b) return false;
+  const na = normaliseTeam(a);
+  const nb = normaliseTeam(b);
+  if (na === nb) return true;
+  if (na.length >= 4 && nb.includes(na)) return true;
+  if (nb.length >= 4 && na.includes(nb)) return true;
+  // Word-level overlap: share at least one meaningful word (>3 chars)
+  const wa = na.split(" ").filter(w => w.length > 3);
+  const wb = nb.split(" ").filter(w => w.length > 3);
+  return wa.some(w => wb.includes(w));
+}
+
 async function getInjuries(afId, season) {
   try {
     const data = await afFetch(`/injuries?league=${afId}&season=${season}`);
     const injuries = {};
     (data.response || []).forEach(item => {
-      const team = item.team?.name || "";
+      const teamRaw = item.team?.name || "";
       const player = item.player?.name || "";
       const reason = item.player?.reason || "injured";
-      if (!team || !player) return;
-      if (!injuries[team]) injuries[team] = [];
+      if (!teamRaw || !player) return;
       const label = reason.toLowerCase().includes("suspend")
         ? `${player} (suspended)`
         : `${player} (${reason})`;
-      injuries[team].push(label);
+      if (!injuries[teamRaw]) injuries[teamRaw] = [];
+      injuries[teamRaw].push(label);
     });
     return injuries;
   } catch(e) {
     return {};
   }
+}
+
+// Fuzzy-lookup injuries for a fixture team name against the API-Sports map.
+function getInjuriesForTeam(injuryMap, fixtureName) {
+  if (injuryMap[fixtureName]) return injuryMap[fixtureName];
+  for (const key of Object.keys(injuryMap)) {
+    if (teamsMatch(key, fixtureName)) return injuryMap[key];
+  }
+  return [];
 }
 
 async function getOdds(afId, season) {
@@ -117,16 +150,15 @@ async function getOdds(afId, season) {
       const btts = markets.find(b => b.name === "Both Teams Score");
       const bttsYes = btts?.values?.find(v => v.value === "Yes")?.odd;
       const ou = markets.find(b => b.name === "Goals Over/Under");
+      const over05 = ou?.values?.find(v => v.value === "Over 0.5")?.odd;
       const over15 = ou?.values?.find(v => v.value === "Over 1.5")?.odd;
-
-      // Team To Score odds
       const tts = markets.find(b => b.name === "Team To Score");
       const homeToScore = tts?.values?.find(v => v.value === "Home")?.odd;
       const awayToScore = tts?.values?.find(v => v.value === "Away")?.odd;
 
       oddsMap[`${home}|${away}`] = {
         home: homeOdd, draw: drawOdd, away: awayOdd,
-        btts: bttsYes, over15,
+        btts: bttsYes, over05, over15,
         homeToScore, awayToScore
       };
     });
@@ -163,6 +195,40 @@ function parseLeagues(raw) {
     }
     return leagues;
   }
+}
+
+// Multiply individual decimal odds together and apply a 5% bookmaker margin.
+function calcComboOdds(oddsStrings) {
+  if (!oddsStrings || !oddsStrings.length) return null;
+  let combined = 1;
+  for (const odd of oddsStrings) {
+    const o = parseFloat(odd);
+    if (!o || o <= 1) return null;
+    combined *= o;
+  }
+  return (combined * 0.95).toFixed(2);
+}
+
+// After Claude returns picks, replace every combo.odds with a server-calculated
+// value derived from the real builder odds so it is mathematically accurate.
+function recalculateComboOdds(leagues) {
+  for (const lg of leagues) {
+    for (const pick of (lg.picks || [])) {
+      if (!pick.combo || !pick.builders) continue;
+      const comboPicks = pick.combo.picks || [];
+      const odds = comboPicks.map(name => {
+        const builder = (pick.builders || []).find(b =>
+          (b.name || "").toLowerCase() === (name || "").toLowerCase()
+        );
+        return builder?.odds;
+      }).filter(Boolean);
+      if (odds.length === comboPicks.length && odds.length > 0) {
+        const calculated = calcComboOdds(odds);
+        if (calculated) pick.combo.odds = calculated;
+      }
+    }
+  }
+  return leagues;
 }
 
 export default async function handler(req, res) {
@@ -235,14 +301,14 @@ export default async function handler(req, res) {
 
           const odds = lg.oddsMap?.[`${f.home}|${f.away}`] || {};
           const oddsStr = odds.home
-            ? ` [Odds: H:${odds.home} D:${odds.draw} A:${odds.away}${odds.btts ? " BTTS:"+odds.btts : ""}${odds.over15 ? " O1.5:"+odds.over15 : ""}${odds.homeToScore ? " "+f.home+"ToScore:"+odds.homeToScore : ""}${odds.awayToScore ? " "+f.away+"ToScore:"+odds.awayToScore : ""}]`
+            ? ` [Odds: H:${odds.home} D:${odds.draw} A:${odds.away}${odds.btts ? " BTTS:"+odds.btts : ""}${odds.over05 ? " O0.5:"+odds.over05 : ""}${odds.over15 ? " O1.5:"+odds.over15 : ""}${odds.homeToScore ? " "+f.home+"ToScore:"+odds.homeToScore : ""}${odds.awayToScore ? " "+f.away+"ToScore:"+odds.awayToScore : ""}]`
             : "";
 
-          const homeInj = (lg.injuries?.[f.home] || []).slice(0, 5).join(", ");
-          const awayInj = (lg.injuries?.[f.away] || []).slice(0, 5).join(", ");
+          const homeInj = getInjuriesForTeam(lg.injuries, f.home).slice(0, 5).join(", ");
+          const awayInj = getInjuriesForTeam(lg.injuries, f.away).slice(0, 5).join(", ");
           const injStr = (homeInj || awayInj)
-            ? `\n   Injuries: ${f.home}: ${homeInj||"None"} | ${f.away}: ${awayInj||"None"}`
-            : "";
+            ? `\n   Injuries/Suspensions: ${f.home}: ${homeInj||"None"} | ${f.away}: ${awayInj||"None"}`
+            : "\n   Injuries/Suspensions: None reported for either team";
 
           return `${i+1}. ${f.home} vs ${f.away} — ${f.date} ${f.time}${trendStr}${oddsStr}${injStr}`;
         }).join("\n");
@@ -266,19 +332,20 @@ ${dataSummary}
 TASK: For each league, pick up to 5 fixtures and provide betting analysis.
 
 Return ONLY raw JSON starting with {:
-{"leagues":[{"league":"name","flag":"emoji","context":"one sentence","picks":[{"home":"team","away":"team","date":"date","time":"time","primary":{"pick":"[Team] to Score","xg":1.8,"odds":"1.55","confidence":"High","reason":"3-4 sentences: explain why this team is likely to score — reference their recent scoring form, xG, key attackers, opponent defensive weaknesses, and any relevant injuries/suspensions","injuries":"list real injuries/suspensions from data above or None"},"builders":[{"name":"[Team] Win","odds":"1.60","confidence":"High","reason":"1-2 sentences explaining why this specific pick makes sense given form, injuries and match context"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"High","reason":"1-2 sentences explaining why goals are expected in this fixture"},{"name":"BTTS","odds":"1.70","confidence":"Medium","reason":"1-2 sentences explaining why both teams are likely to score"}],"combo":{"name":"Win + Goals","picks":["[Team] Win","Over 1.5 Goals"],"odds":"2.35","reason":"2-3 sentences explaining why these picks combine well and the overall match narrative supporting this bet"},"form":[{"result":"W","score":"2-0","xg":2.1,"actual":2},{"result":"D","score":"1-1","xg":1.3,"actual":1},{"result":"W","score":"3-1","xg":2.4,"actual":3},{"result":"L","score":"0-1","xg":0.9,"actual":0},{"result":"W","score":"2-1","xg":1.7,"actual":2}],"tags":["tag1","tag2"]}]}]}
+{"leagues":[{"league":"name","flag":"emoji","context":"one sentence","picks":[{"home":"team","away":"team","date":"date","time":"time","primary":{"pick":"[Team] to Score","xg":1.8,"odds":"1.55","confidence":"High","reason":"3-4 sentences: explain why this team is likely to score — reference their recent scoring form, xG, key attackers, opponent defensive weaknesses, and any relevant injuries/suspensions","injuries":"list real injuries/suspensions from data above or None"},"builders":[{"name":"[Team] Win","odds":"1.60","confidence":"High","reason":"1-2 sentences"},{"name":"Over 0.5 Goals","odds":"1.15","confidence":"High","reason":"1-2 sentences"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"High","reason":"1-2 sentences"},{"name":"BTTS","odds":"1.70","confidence":"Medium","reason":"1-2 sentences"}],"combo":{"name":"Win + Goals","picks":["[Team] Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"2-3 sentences"},"form":[{"result":"W","score":"2-0","xg":2.1,"actual":2},{"result":"D","score":"1-1","xg":1.3,"actual":1},{"result":"W","score":"3-1","xg":2.4,"actual":3},{"result":"L","score":"0-1","xg":0.9,"actual":0},{"result":"W","score":"2-1","xg":1.7,"actual":2}],"tags":["tag1","tag2"]}]}]}
 
 RULES:
 - primary.pick MUST always be "[Team] to Score" e.g. "Arsenal to Score"
-- primary.odds: use the real "[Team]ToScore" odds from the data above — e.g. if picking Arsenal (home), use the HomeToScore odd. If picking away team, use AwayToScore odd
-- primary.reason: 3-4 sentences — reference recent scoring form, xG trend, key attackers, opponent defensive record, and injury impact
-- injuries: use REAL data provided above, max 4 players e.g. "Havertz (injured), Timber (injured)" or "None"
-- builders: use real bookmaker odds from the data above (H/D/A odds, BTTS, O1.5) — each builder pick MUST have a reason field (1-2 sentences of specific analysis)
-- combo.reason: 2-3 sentences explaining the overall match narrative and why these picks combine well
-- NEVER put to score or over 0.5 in builders — primary only
-- NEVER suggest Over 0.5 Goals or Over 2.5 Goals — maximum Over 1.5 Goals only
-- builders: 3 picks — Win/Double Chance, Over 1.5, BTTS, or HT/FT
-- combo: ONE combination of 2-3 builder picks with a SINGLE combined odds value e.g. "2.80"
+- primary.odds: use the real "[Team]ToScore" odds from the data above
+- primary.reason: 3-4 sentences referencing scoring form, xG, key attackers, defensive weaknesses, injury impact
+- injuries: use REAL data from above, max 4 players, always include suspended players — or "None"
+- builders: use real bookmaker odds from the data (H/D/A, BTTS, O0.5, O1.5)
+- builders MAY include Over 0.5 Goals (use O0.5 odd) and/or Over 1.5 Goals (use O1.5 odd)
+- NEVER suggest Over 2.5 Goals in builders or anywhere else
+- NEVER put "[Team] to Score" or any "to score" pick in builders — primary only
+- builders: 3-4 picks from Win/Double Chance, Over 0.5 Goals, Over 1.5 Goals, BTTS, or HT/FT
+- combo.picks: choose 2-3 from your builder picks
+- combo.odds: always write exactly "CALCULATE" — the server replaces this with mathematically accurate odds
 - form: 5 items most recent first
 - No markdown fences`;
     };
@@ -290,7 +357,7 @@ RULES:
       callClaude(makePrompt(leagueData.slice(6)))
     ]);
 
-    const allLeagues = [
+    let allLeagues = [
       ...parseLeagues(rawA),
       ...parseLeagues(rawB),
       ...parseLeagues(rawC),
@@ -304,6 +371,9 @@ RULES:
         lg.cfg = live;
       }
     });
+
+    // Replace all combo.odds with mathematically calculated values
+    allLeagues = recalculateComboOdds(allLeagues);
 
     const payload = {
       leagues: allLeagues,
