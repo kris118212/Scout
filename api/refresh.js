@@ -26,56 +26,40 @@ async function afFetch(path) {
 async function callClaude(prompt, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      // Multi-turn loop to handle web_search tool_use blocks
-      const messages = [{ role: "user", content: prompt }];
-      let finalText = "";
+      // web_search_20250305 is a server-side tool — Anthropic executes searches
+      // automatically. We make a single request; the API handles all tool calls
+      // internally and returns the final response in one shot.
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.ANTHROPIC_KEY,
+          "anthropic-version": "2023-06-01"
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 8000,
+          tools: [{ type: "web_search_20250305", name: "web_search" }],
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      const data = await r.json();
 
-      for (let turn = 0; turn < 8; turn++) {
-        const r = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": process.env.ANTHROPIC_KEY,
-            "anthropic-version": "2023-06-01"
-          },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-6",
-            max_tokens: 8000,
-            tools: [{ type: "web_search_20250305", name: "web_search" }],
-            messages
-          })
-        });
-        const data = await r.json();
-
-        if (data.error) {
-          break;
-        }
-
-        const blocks = data.content || [];
-
-        // Collect any text from this turn
-        const textBlocks = blocks.filter(b => b.type === "text");
-        if (textBlocks.length) {
-          finalText = textBlocks.map(b => b.text).join("");
-        }
-
-        // If stop_reason is end_turn or no tool_use blocks, we're done
-        const toolUseBlocks = blocks.filter(b => b.type === "tool_use");
-        if (data.stop_reason === "end_turn" || !toolUseBlocks.length) break;
-
-        // Otherwise, append assistant turn and send tool results back
-        messages.push({ role: "assistant", content: blocks });
-        const toolResults = toolUseBlocks.map(tu => ({
-          type: "tool_result",
-          tool_use_id: tu.id,
-          content: tu.input?.query ? `Search results for: ${tu.input.query}` : "No results"
-        }));
-        messages.push({ role: "user", content: toolResults });
+      if (data.error) {
+        if (attempt === retries) return "";
+        continue;
       }
 
-      if (finalText.length > 100) return finalText;
+      // Extract all text blocks from the response
+      const blocks = data.content || [];
+      const text = blocks
+        .filter(b => b.type === "text")
+        .map(b => b.text)
+        .join("");
+
+      if (text.length > 100) return text;
       if (attempt < retries) continue;
-      return finalText;
+      return text;
     } catch(e) {
       if (attempt === retries) throw e;
     }
