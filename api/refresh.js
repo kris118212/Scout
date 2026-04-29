@@ -164,6 +164,7 @@ Return ONLY raw JSON starting with {:
 
 RULES:
 - primary.pick MUST always be "[Team] to Score" e.g. "Arsenal to Score"
+- injuries field: list key injuries AND suspensions e.g. "Salah suspended, Nunez injured" or "None"
 - NEVER put to score or over 0.5 in builders — primary only
 - NEVER suggest Over 2.5 Goals — maximum Over 1.5 Goals
 - builders: 3 picks that combine well — Win/Double Chance, Over 1.5, BTTS, or HT/FT
