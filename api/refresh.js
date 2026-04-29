@@ -23,8 +23,6 @@ async function afFetch(path) {
   return r.json();
 }
 
-const claudeErrors = [];
-
 async function callClaude(prompt, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -50,7 +48,6 @@ async function callClaude(prompt, retries = 2) {
         const data = await r.json();
 
         if (data.error) {
-          claudeErrors.push({ attempt, turn, error: data.error });
           break;
         }
 
@@ -80,7 +77,6 @@ async function callClaude(prompt, retries = 2) {
       if (attempt < retries) continue;
       return finalText;
     } catch(e) {
-      claudeErrors.push({ attempt, exception: e.message });
       if (attempt === retries) throw e;
     }
   }
@@ -194,7 +190,7 @@ async function getOdds(afId, season) {
 }
 
 function parseLeagues(raw) {
-  const txt = raw.replace(/```json|```/g, "").trim();
+  const txt = raw.replace(/```json[\s\S]*?```/g, m => m.replace(/```json|```/g,"")).replace(/```json|```/g, "").trim();
   const s = txt.indexOf("{"), e = txt.lastIndexOf("}");
   if (s === -1 || e === -1) return [];
   try {
@@ -368,7 +364,7 @@ RULES:
 - combo.picks: choose 2-3 from your builder picks
 - combo.odds: always write exactly "CALCULATE" — the server replaces this with mathematically accurate odds
 - form: 5 items most recent first
-- No markdown fences`;
+- Return ONLY the raw JSON object — no markdown, no backticks, no ```json, no explanation text before or after the JSON`;
     };
 
     let rawA = "", rawB = "", rawC = "", rawD = "";
@@ -409,27 +405,7 @@ RULES:
     await kvSet("scout_data", JSON.stringify(payload));
     await kvSet("scout_updated", now.toISOString());
 
-    res.status(200).json({
-      ok: true,
-      leagues: allLeagues.length,
-      updatedAt: now.toISOString(),
-      debug: {
-        leagueDataFetched: leagueData.map(lg => ({
-          name: lg.name,
-          fixtures: lg.fixtures?.length || 0,
-          standings: lg.standings?.length || 0,
-          injuryKeys: "n/a - fetched inline by Claude"
-        })),
-        rawLengths: { a: rawA?.length || 0, b: rawB?.length || 0, c: rawC?.length || 0, d: rawD?.length || 0 },
-        rawPreviews: {
-          a: rawA?.slice(0, 500) || "EMPTY",
-          b: rawB?.slice(0, 500) || "EMPTY",
-          c: rawC?.slice(0, 500) || "EMPTY",
-          d: rawD?.slice(0, 500) || "EMPTY"
-        },
-        claudeErrors
-      }
-    });
+    res.status(200).json({ ok: true, leagues: allLeagues.length, updatedAt: now.toISOString() });
   } catch(err) {
     console.error(err);
     res.status(500).json({ error: err.message });
