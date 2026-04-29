@@ -313,20 +313,31 @@ export default async function handler(req, res) {
       // Use the flag from the league config, not from Claude
       const lgName = batch[0]?.name || "";
 
-      return `Today is ${today}. You are an expert football betting analyst.
+      return `Today is ${today}. You are an expert football betting analyst with deep knowledge of European football.
 
 ${dataSummary}
 
-Pick up to 3 fixtures from the league above and return ONLY this JSON (no markdown, no explanation):
-{"leagues":[{"league":"${lgName}","flag":"PLACEHOLDER","context":"one sentence about the league situation","picks":[{"home":"TeamA","away":"TeamB","date":"Sat 2 May","time":"15:00","primary":{"pick":"TeamA to Score","xg":1.8,"odds":"1.55","confidence":"High","reason":"3 sentences on why this team will score — recent form, attackers, opponent defence","injuries":"Not available"},"builders":[{"name":"TeamA Win","odds":"1.75","confidence":"High","reason":"2 sentences"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"High","reason":"2 sentences"},{"name":"BTTS","odds":"1.80","confidence":"Medium","reason":"2 sentences"}],"combo":{"name":"Win + Goals","picks":["TeamA Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"2 sentences"},"form":[{"result":"W","score":"2-0","xg":2.1,"actual":2},{"result":"W","score":"1-0","xg":1.4,"actual":1},{"result":"D","score":"1-1","xg":1.2,"actual":1},{"result":"L","score":"0-2","xg":0.8,"actual":0},{"result":"W","score":"3-1","xg":2.3,"actual":3}],"tags":["home form","strong attack"]}]}]}
+TASK: Select the 3 BEST fixtures for betting from the league above. Prioritise fixtures where:
+1. One team has clear scoring form (high avg goals scored, strong attack, weak opposition defence)
+2. Bookmaker odds are available — skip fixtures marked "NOT AVAILABLE"
+3. The pick team is likely to score based on league position, form, and matchup
 
-Rules:
-- league: use EXACTLY "${lgName}" — do not change this
-- primary.pick: always "[Team] to Score" using real HomeToScore or AwayToScore odds from data, or "N/A" if not shown
-- builders: use real H/D/A/BTTS/O0.5/O1.5 odds from data above
-- combo.odds: write "CALCULATE"
-- form: 5 results for the primary pick team using the form data provided above (W/D/L), most recent first
-- Raw JSON only, no markdown`;
+Return ONLY this JSON (no markdown, no backticks, no explanation before or after):
+{"leagues":[{"league":"${lgName}","flag":"PLACEHOLDER","context":"one sentence summarising the league situation right now","picks":[{"home":"TeamA","away":"TeamB","date":"Sat 2 May","time":"15:00","primary":{"pick":"TeamA to Score","xg":1.9,"odds":"1.45","confidence":"High","reason":"3 sentences: reference the team's recent scoring form from the data above, their key attackers, and why the opponent's defence is vulnerable. Be specific about goals scored in last 5 games.","injuries":"Not available"},"builders":[{"name":"TeamA Win","odds":"1.75","confidence":"High","reason":"2 sentences on why this team wins based on league position and form"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"High","reason":"2 sentences on why goals are expected in this fixture"},{"name":"BTTS","odds":"1.80","confidence":"Medium","reason":"2 sentences on why both teams score"}],"combo":{"name":"Win + Goals","picks":["TeamA Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"2 sentences on why these combine well"},"form":[{"result":"W","score":"2-0","xg":2.1,"actual":2},{"result":"W","score":"1-0","xg":1.4,"actual":1},{"result":"D","score":"1-1","xg":1.2,"actual":1},{"result":"L","score":"0-2","xg":0.8,"actual":0},{"result":"W","score":"3-1","xg":2.3,"actual":3}],"tags":["strong attack","home form"]}]}]}
+
+STRICT RULES:
+- Only pick fixtures where odds ARE available in the data — never pick a fixture marked "NOT AVAILABLE"
+- league: always "${lgName}" — never change this
+- flag: always "PLACEHOLDER" — never change this  
+- primary.pick: always "[Team] to Score" e.g. "Arsenal to Score"
+- primary.odds: use the real HomeToScore or AwayToScore odd from the data. Write "N/A" only if genuinely absent
+- primary.xg: estimate based on avg goals scored from form data
+- confidence: "High" only if avg goals scored > 1.5 and strong form. Otherwise "Medium"
+- builders: use real H/D/A/BTTS/O0.5/O1.5 odds. Never suggest Over 2.5. Never put "to score" in builders
+- builders MAY include Over 0.5 Goals and/or Over 1.5 Goals  
+- combo.odds: always write "CALCULATE"
+- form: 5 most recent results for the primary pick team, most recent first
+- Raw JSON only — absolutely no text before or after the JSON object`;
     };
 
     // All 8 leagues in parallel — prompt is small enough (~500 tokens each) to fit well within rate limits
