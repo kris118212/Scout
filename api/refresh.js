@@ -280,16 +280,24 @@ export default async function handler(req, res) {
 
       const dataSummary = batch.map(lg => {
         const fxLines = lg.fixtures.slice(0, 5).map((f, i) => {
-          const trendStr = "";
+          const td = lg.trendMap?.[`${f.home}|${f.away}`];
+          const trendStr = td
+            ? ` [Home form:${td.home?.form||"?"} avg scored:${td.home?.avg_goals_scored?.toFixed(1)||"?"} | Away form:${td.away?.form||"?"} avg scored:${td.away?.avg_goals_scored?.toFixed(1)||"?"}]`
+            : "";
 
-          const odds = lg.oddsMap?.[`${f.home}|${f.away}`] || {};
+          // Fuzzy-match fixture names against API-Sports odds map keys
+          const oddsKey = Object.keys(lg.oddsMap||{}).find(k => {
+            const [kHome, kAway] = k.split("|");
+            return teamsMatch(kHome, f.home) && teamsMatch(kAway, f.away);
+          });
+          const odds = (oddsKey && lg.oddsMap[oddsKey]) || {};
           const oddsStr = odds.home
             ? ` [Odds: H:${odds.home} D:${odds.draw} A:${odds.away}${odds.btts ? " BTTS:"+odds.btts : ""}${odds.over05 ? " O0.5:"+odds.over05 : ""}${odds.over15 ? " O1.5:"+odds.over15 : ""}${odds.homeToScore ? " "+f.home+"ToScore:"+odds.homeToScore : ""}${odds.awayToScore ? " "+f.away+"ToScore:"+odds.awayToScore : ""}]`
             : " [Odds: NOT AVAILABLE for this fixture]";
 
 
 
-          return `${i+1}. ${f.home} vs ${f.away} — ${f.date} ${f.time}${oddsStr}`;
+          return `${i+1}. ${f.home} vs ${f.away} — ${f.date} ${f.time}${trendStr}${oddsStr}`;
         }).join("\n");
 
         const tableLines = lg.standings.slice(0, 6).map(t =>
@@ -302,14 +310,24 @@ export default async function handler(req, res) {
         return `LEAGUE: ${lg.name} ${lg.flag}\nFIXTURES:\n${fxLines||"none"}\nTOP 6:\n${tableLines||"none"}\nBOTTOM 3:\n${botLines||"none"}`;
       }).join("\n\n---\n\n");
 
-      return `Today: ${today}. Football betting analyst. Analyse this league and pick 3 best fixtures.
+      // Use the flag from the league config, not from Claude
+      const lgFlag = batch[0]?.flag || "";
+      const lgName = batch[0]?.name || "";
+
+      return `Today is ${today}. You are an expert football betting analyst.
 
 ${dataSummary}
 
-Respond with ONLY this JSON structure (no markdown):
-{"leagues":[{"league":"NAME","flag":"FLAG","context":"brief","picks":[{"home":"H","away":"A","date":"D","time":"T","primary":{"pick":"H to Score","xg":1.5,"odds":"1.50","confidence":"High","reason":"2 sentences","injuries":"None"},"builders":[{"name":"H Win","odds":"1.80","confidence":"High","reason":"1 sentence"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"Med","reason":"1 sentence"},{"name":"BTTS","odds":"1.70","confidence":"Med","reason":"1 sentence"}],"combo":{"name":"Win+Goals","picks":["H Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"1 sentence"},"form":[{"result":"W","score":"2-0","xg":1.8,"actual":2}],"tags":["home form"]}]}]}
+Pick up to 3 fixtures from the league above and return ONLY this JSON (no markdown, no explanation):
+{"leagues":[{"league":"${lgName}","flag":"${lgFlag}","context":"one sentence about the league situation","picks":[{"home":"TeamA","away":"TeamB","date":"Sat 2 May","time":"15:00","primary":{"pick":"TeamA to Score","xg":1.8,"odds":"1.55","confidence":"High","reason":"3 sentences on why this team will score — recent form, attackers, opponent defence","injuries":"Not available"},"builders":[{"name":"TeamA Win","odds":"1.75","confidence":"High","reason":"2 sentences"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"High","reason":"2 sentences"},{"name":"BTTS","odds":"1.80","confidence":"Medium","reason":"2 sentences"}],"combo":{"name":"Win + Goals","picks":["TeamA Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"2 sentences"},"form":[{"result":"W","score":"2-0","xg":2.1,"actual":2},{"result":"W","score":"1-0","xg":1.4,"actual":1},{"result":"D","score":"1-1","xg":1.2,"actual":1},{"result":"L","score":"0-2","xg":0.8,"actual":0},{"result":"W","score":"3-1","xg":2.3,"actual":3}],"tags":["home form","strong attack"]}]}]}
 
-Rules: primary.pick="[Team] to Score". Use real odds from data. injuries="Not available". combo.odds="CALCULATE". Raw JSON only.`;
+Rules:
+- league and flag: use EXACTLY "${lgName}" and "${lgFlag}" — do not change these
+- primary.pick: always "[Team] to Score" using real HomeToScore or AwayToScore odds from data, or "N/A" if not shown
+- builders: use real H/D/A/BTTS/O0.5/O1.5 odds from data above
+- combo.odds: write "CALCULATE"
+- form: 5 results for the primary pick team using the form data provided above (W/D/L), most recent first
+- Raw JSON only, no markdown`;
     };
 
     // All 8 leagues in parallel — prompt is small enough (~500 tokens each) to fit well within rate limits
