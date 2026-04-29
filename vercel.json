@@ -2,6 +2,9 @@
   "functions": {
     "api/refresh.js": { "maxDuration": 300 }
   },
+  "rewrites": [
+    { "source": "/api/football/:path*", "destination": "/api/football.js" }
+  ],
   "crons": [
     { "path": "/api/refresh", "schedule": "0 6 * * *" }
   ]
