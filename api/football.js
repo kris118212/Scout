@@ -1,13 +1,21 @@
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  if (req.method === 'OPTIONS') { res.status(200).end(); return; }
+  res.setHeader('Access-Control-Allow-Headers', '*');
+  
+  if (req.method === 'OPTIONS') { 
+    res.status(200).end(); 
+    return; 
+  }
   
   const path = req.url.replace('/api/football', '');
   
   try {
     const response = await fetch('https://api.football-data.org/v4' + path, {
-      headers: { 'X-Auth-Token': process.env.FD_KEY }
+      headers: { 
+        'X-Auth-Token': process.env.FD_KEY,
+        'Accept': 'application/json'
+      }
     });
     const data = await response.json();
     res.status(response.status).json(data);
