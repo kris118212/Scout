@@ -16,22 +16,33 @@ async function fdFetch(path) {
   return r.json();
 }
 
-async function callClaude(prompt) {
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_KEY,
-      "anthropic-version": "2023-06-01"
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-5",
-      max_tokens: 8000,
-      messages: [{ role: "user", content: prompt }]
-    })
-  });
-  const data = await r.json();
-  return data.content?.[0]?.text || "";
+async function callClaude(prompt, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.ANTHROPIC_KEY,
+          "anthropic-version": "2023-06-01"
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-5",
+          max_tokens: 12000,
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      const data = await r.json();
+      const text = data.content?.[0]?.text || "";
+      // Check we got something meaningful back
+      if (text.length > 100) return text;
+      if (attempt < retries) continue;
+      return text;
+    } catch(e) {
+      if (attempt === retries) throw e;
+    }
+  }
+  return "";
 }
 
 async function kvSet(key, value) {
@@ -189,16 +200,18 @@ RULES:
 - No markdown fences`;
     };
 
-    const [rawA, rawB, rawC] = await Promise.all([
-      callClaude(makePrompt(leagueData.slice(0, 3))),
-      callClaude(makePrompt(leagueData.slice(3, 6))),
+    const [rawA, rawB, rawC, rawD] = await Promise.all([
+      callClaude(makePrompt(leagueData.slice(0, 2))),
+      callClaude(makePrompt(leagueData.slice(2, 4))),
+      callClaude(makePrompt(leagueData.slice(4, 6))),
       callClaude(makePrompt(leagueData.slice(6)))
     ]);
 
     const allLeagues = [
       ...parseLeagues(rawA),
       ...parseLeagues(rawB),
-      ...parseLeagues(rawC)
+      ...parseLeagues(rawC),
+      ...parseLeagues(rawD)
     ];
 
     allLeagues.forEach(lg => {
