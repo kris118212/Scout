@@ -298,11 +298,8 @@ export default async function handler(req, res) {
       const end14str = end14.toLocaleDateString("en-GB", {weekday:"short",day:"numeric",month:"long",year:"numeric"});
 
       const dataSummary = batch.map(lg => {
-        const fxLines = lg.fixtures.slice(0, 10).map((f, i) => {
-          const td = lg.trendMap?.[`${f.home}|${f.away}`];
-          const trendStr = td
-            ? ` [Home form:${td.home?.form||"?"} avg scored:${td.home?.avg_goals_scored?.toFixed(1)||"?"} BTTS:${td.home?.pct_bts!=null?Math.round(td.home.pct_bts*100)+"%":"?"} | Away form:${td.away?.form||"?"} avg scored:${td.away?.avg_goals_scored?.toFixed(1)||"?"} BTTS:${td.away?.pct_bts!=null?Math.round(td.away.pct_bts*100)+"%":"?"}]`
-            : "";
+        const fxLines = lg.fixtures.slice(0, 5).map((f, i) => {
+          const trendStr = "";
 
           const odds = lg.oddsMap?.[`${f.home}|${f.away}`] || {};
           const oddsStr = odds.home
@@ -351,22 +348,25 @@ RULES:
 - Return ONLY the raw JSON object — no markdown, no backticks, no code fences, no explanation text before or after the JSON`;
     };
 
-    // Stagger calls by 20s to stay within 30k tokens/min rate limit
+    // One league per call, staggered to stay within rate limits
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    let rawA = "", rawB = "", rawC = "", rawD = "";
-    rawA = await callClaude(makePrompt(leagueData.slice(0, 2)));
-    await sleep(20000);
-    rawB = await callClaude(makePrompt(leagueData.slice(2, 4)));
-    await sleep(20000);
-    rawC = await callClaude(makePrompt(leagueData.slice(4, 6)));
-    await sleep(20000);
-    rawD = await callClaude(makePrompt(leagueData.slice(6)));
+    const raws = [];
+    for (let i = 0; i < leagueData.length; i++) {
+      if (i > 0) await sleep(15000);
+      raws.push(await callClaude(makePrompt(leagueData.slice(i, i + 1))));
+    }
+    let rawA = raws[0]||"", rawB = raws[1]||"", rawC = raws[2]||"", rawD = raws[3]||"";
+    const rawE = raws[4]||"", rawF = raws[5]||"", rawG = raws[6]||"", rawH = raws[7]||"";
 
     let allLeagues = [
       ...parseLeagues(rawA),
       ...parseLeagues(rawB),
       ...parseLeagues(rawC),
-      ...parseLeagues(rawD)
+      ...parseLeagues(rawD),
+      ...parseLeagues(rawE),
+      ...parseLeagues(rawF),
+      ...parseLeagues(rawG),
+      ...parseLeagues(rawH)
     ];
 
     allLeagues.forEach(lg => {
@@ -397,11 +397,7 @@ RULES:
       leagues: allLeagues.length, 
       updatedAt: now.toISOString(),
       debug: { 
-        rawLengths: { a: rawA?.length||0, b: rawB?.length||0, c: rawC?.length||0, d: rawD?.length||0 },
-        previews: { 
-          a: rawA?.slice(0,300)||"EMPTY", 
-          b: rawB?.slice(0,300)||"EMPTY"
-        }
+        rawLengths: raws.map((r,i) => ({ league: leagueData[i]?.name, len: r?.length||0, preview: r?.slice(0,150)||"EMPTY" }))
       }
     });
   } catch(err) {
