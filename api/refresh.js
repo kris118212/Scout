@@ -326,7 +326,8 @@ Return ONLY this JSON (no markdown, no backticks, no explanation before or after
 {"leagues":[{"league":"${lgName}","flag":"PLACEHOLDER","context":"one sentence summarising the league situation right now","picks":[{"home":"TeamA","away":"TeamB","date":"Sat 2 May","time":"15:00","primary":{"pick":"TeamA to Score","xg":1.9,"odds":"1.45","confidence":"High","reason":"3 sentences: reference the team's recent scoring form from the data above, their key attackers, and why the opponent's defence is vulnerable. Be specific about goals scored in last 5 games.","injuries":"Not available"},"builders":[{"name":"TeamA Win","odds":"1.75","confidence":"High","reason":"2 sentences on why this team wins based on league position and form"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"High","reason":"2 sentences on why goals are expected in this fixture"},{"name":"BTTS","odds":"1.80","confidence":"Medium","reason":"2 sentences on why both teams score"}],"combo":{"name":"Win + Goals","picks":["TeamA Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"2 sentences on why these combine well"},"form":[{"result":"W","score":"2-0","xg":2.1,"actual":2},{"result":"W","score":"1-0","xg":1.4,"actual":1},{"result":"D","score":"1-1","xg":1.2,"actual":1},{"result":"L","score":"0-2","xg":0.8,"actual":0},{"result":"W","score":"3-1","xg":2.3,"actual":3}],"tags":["strong attack","home form"]}]}]}
 
 STRICT RULES:
-- Only pick fixtures where odds ARE available in the data — never pick a fixture marked "NOT AVAILABLE"
+- Pick the 5 best fixtures based on form, league position and scoring likelihood — even if odds show "NOT AVAILABLE"
+- If odds ARE available use them; if not, write "N/A" for odds fields
 - league: always "${lgName}" — never change this
 - flag: always "PLACEHOLDER" — never change this  
 - primary.pick: always "[Team] to Score" e.g. "Arsenal to Score"
