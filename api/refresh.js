@@ -103,65 +103,130 @@ function teamsMatch(a, b) {
   return wa.some(w => wb.includes(w));
 }
 
-async function getInjuries(afId, season) {
+// Fetch injuries for a specific fixture by its API-Sports fixture ID.
+// This is the most reliable method — avoids all team name matching issues.
+async function getInjuriesByFixture(fixtureId) {
   try {
-    const data = await afFetch(`/injuries?league=${afId}&season=${season}`);
-    const injuries = {};
+    const data = await afFetch(`/injuries?fixture=${fixtureId}`);
+    const result = {};
     (data.response || []).forEach(item => {
-      const teamRaw = item.team?.name || "";
+      const teamName = item.team?.name || "";
       const player = item.player?.name || "";
+      const type = item.player?.type || "";
       const reason = item.player?.reason || "injured";
-      if (!teamRaw || !player) return;
-      const label = reason.toLowerCase().includes("suspend")
+      if (!teamName || !player) return;
+      const label = (type === "Suspension" || reason.toLowerCase().includes("suspend"))
         ? `${player} (suspended)`
         : `${player} (${reason})`;
-      if (!injuries[teamRaw]) injuries[teamRaw] = [];
-      injuries[teamRaw].push(label);
+      if (!result[teamName]) result[teamName] = [];
+      result[teamName].push(label);
     });
-    return injuries;
+    return result;
   } catch(e) {
     return {};
   }
 }
 
-// Fuzzy-lookup injuries for a fixture team name against the API-Sports map.
-function getInjuriesForTeam(injuryMap, fixtureName) {
-  if (injuryMap[fixtureName]) return injuryMap[fixtureName];
-  for (const key of Object.keys(injuryMap)) {
-    if (teamsMatch(key, fixtureName)) return injuryMap[key];
+// For a given league, get the API-Sports fixture IDs for upcoming matches
+// so we can fetch injuries per-fixture rather than per-league.
+async function getAfFixtureIds(afId, season, dateFrom, dateTo) {
+  try {
+    const fmt = d => d.toISOString().split("T")[0];
+    const data = await afFetch(`/fixtures?league=${afId}&season=${season}&from=${fmt(dateFrom)}&to=${fmt(dateTo)}&status=NS-TBD`);
+    // Returns a map of "HomeTeam|AwayTeam" -> fixtureId
+    const map = {};
+    (data.response || []).forEach(f => {
+      const home = f.teams?.home?.name || "";
+      const away = f.teams?.away?.name || "";
+      const id = f.fixture?.id;
+      if (home && away && id) map[`${home}|${away}`] = id;
+    });
+    return map;
+  } catch(e) {
+    return {};
   }
-  return [];
+}
+
+// Given a fixture ID map and fuzzy team names from football-data.org,
+// find the best matching API-Sports fixture ID.
+function findAfFixtureId(fixtureIdMap, fdHome, fdAway) {
+  // Try direct key first
+  if (fixtureIdMap[`${fdHome}|${fdAway}`]) return fixtureIdMap[`${fdHome}|${fdAway}`];
+  // Fuzzy search
+  for (const [key, id] of Object.entries(fixtureIdMap)) {
+    const [afHome, afAway] = key.split("|");
+    if (teamsMatch(afHome, fdHome) && teamsMatch(afAway, fdAway)) return id;
+  }
+  return null;
+}
+
+// Search all bookmakers for a market, returning the first match found.
+function extractMarket(bookmakers, marketName) {
+  for (const bk of (bookmakers || [])) {
+    const market = (bk.bets || []).find(b => b.name === marketName);
+    if (market) return market;
+  }
+  return null;
 }
 
 async function getOdds(afId, season) {
   try {
-    const data = await afFetch(`/odds?league=${afId}&season=${season}&bookmaker=6`);
+    // Fetch Bet365 (id=6) as primary, plus all bookmakers as fallback pool.
+    // This ensures we get Team To Score odds even when Bet365 doesn't offer
+    // that market for a particular league or fixture.
+    const [bet365Data, allData] = await Promise.all([
+      afFetch(`/odds?league=${afId}&season=${season}&bookmaker=6`).catch(() => ({})),
+      afFetch(`/odds?league=${afId}&season=${season}`).catch(() => ({}))
+    ]);
+
+    // Build fallback pool: fixture key -> all bookmakers for that fixture
+    const fallbackPool = {};
+    (allData.response || []).forEach(item => {
+      const home = item.fixture?.teams?.home?.name || "";
+      const away = item.fixture?.teams?.away?.name || "";
+      if (home && away) fallbackPool[`${home}|${away}`] = item.bookmakers || [];
+    });
+
     const oddsMap = {};
-    (data.response || []).forEach(item => {
+
+    // Use Bet365 results as primary; fall back to allData if Bet365 returned nothing
+    const primaryItems = (bet365Data.response || []).length > 0
+      ? (bet365Data.response || [])
+      : (allData.response || []);
+
+    primaryItems.forEach(item => {
       const home = item.fixture?.teams?.home?.name || "";
       const away = item.fixture?.teams?.away?.name || "";
       if (!home || !away) return;
-      const markets = item.bookmakers?.[0]?.bets || [];
-      const mw = markets.find(b => b.name === "Match Winner");
-      if (!mw) return;
-      const homeOdd = mw.values?.find(v => v.value === "Home")?.odd;
-      const drawOdd = mw.values?.find(v => v.value === "Draw")?.odd;
-      const awayOdd = mw.values?.find(v => v.value === "Away")?.odd;
-      const btts = markets.find(b => b.name === "Both Teams Score");
-      const bttsYes = btts?.values?.find(v => v.value === "Yes")?.odd;
-      const ou = markets.find(b => b.name === "Goals Over/Under");
-      const over05 = ou?.values?.find(v => v.value === "Over 0.5")?.odd;
-      const over15 = ou?.values?.find(v => v.value === "Over 1.5")?.odd;
-      const tts = markets.find(b => b.name === "Team To Score");
-      const homeToScore = tts?.values?.find(v => v.value === "Home")?.odd;
-      const awayToScore = tts?.values?.find(v => v.value === "Away")?.odd;
 
-      oddsMap[`${home}|${away}`] = {
-        home: homeOdd, draw: drawOdd, away: awayOdd,
-        btts: bttsYes, over05, over15,
-        homeToScore, awayToScore
+      const key = `${home}|${away}`;
+      const bet365Bets = item.bookmakers?.[0]?.bets || [];
+      const allBookmakers = fallbackPool[key] || item.bookmakers || [];
+
+      // For each market value: try Bet365 first, then scan all bookmakers
+      const getVal = (marketName, valueName) => {
+        const b365Market = bet365Bets.find(b => b.name === marketName);
+        const b365Val = b365Market?.values?.find(v => v.value === valueName)?.odd;
+        if (b365Val) return b365Val;
+        const fbMarket = extractMarket(allBookmakers, marketName);
+        return fbMarket?.values?.find(v => v.value === valueName)?.odd || null;
+      };
+
+      const homeOdd = getVal("Match Winner", "Home");
+      if (!homeOdd) return; // skip fixtures with no odds at all
+
+      oddsMap[key] = {
+        home: homeOdd,
+        draw: getVal("Match Winner", "Draw"),
+        away: getVal("Match Winner", "Away"),
+        btts: getVal("Both Teams Score", "Yes"),
+        over05: getVal("Goals Over/Under", "Over 0.5"),
+        over15: getVal("Goals Over/Under", "Over 1.5"),
+        homeToScore: getVal("Team To Score", "Home"),
+        awayToScore: getVal("Team To Score", "Away")
       };
     });
+
     return oddsMap;
   } catch(e) {
     return {};
@@ -259,24 +324,43 @@ export default async function handler(req, res) {
     } catch(e) {}
 
     const leagueData = await Promise.all(LEAGUES.map(async lg => {
-      const [fixturesData, standingsData, injuries, oddsMap] = await Promise.all([
+      const [fixturesData, standingsData, oddsMap, fixtureIdMap] = await Promise.all([
         fdFetch(`/competitions/${lg.id}/matches?dateFrom=${fmt(now)}&dateTo=${fmt(end14)}`).catch(() => ({})),
         fdFetch(`/competitions/${lg.id}/standings`).catch(() => ({})),
-        getInjuries(lg.afId, lg.season),
-        getOdds(lg.afId, lg.season)
+        getOdds(lg.afId, lg.season),
+        getAfFixtureIds(lg.afId, lg.season, now, end14)
       ]);
 
       const finished = ["FINISHED","IN_PLAY","PAUSED","SUSPENDED","CANCELLED","POSTPONED"];
-      const fixtures = (fixturesData.matches || [])
-        .filter(m => !finished.includes(m.status))
-        .map(m => ({
-          home: m.homeTeam?.shortName || m.homeTeam?.name || "TBC",
-          away: m.awayTeam?.shortName || m.awayTeam?.name || "TBC",
-          date: new Date(m.utcDate).toLocaleDateString("en-GB", {weekday:"short",day:"numeric",month:"short"}),
-          time: new Date(m.utcDate).toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit"}),
-          utc: m.utcDate,
-          status: m.status
-        }));
+      const upcomingMatches = (fixturesData.matches || []).filter(m => !finished.includes(m.status));
+
+      // Fetch injuries per fixture in parallel (up to first 10 fixtures)
+      const top10 = upcomingMatches.slice(0, 10);
+      const fixtureInjuries = await Promise.all(top10.map(async m => {
+        const fdHome = m.homeTeam?.shortName || m.homeTeam?.name || "";
+        const fdAway = m.awayTeam?.shortName || m.awayTeam?.name || "";
+        const afId = findAfFixtureId(fixtureIdMap, fdHome, fdAway);
+        if (!afId) return { home: fdHome, away: fdAway, injuries: {} };
+        const inj = await getInjuriesByFixture(afId);
+        return { home: fdHome, away: fdAway, injuries: inj };
+      }));
+
+      // Build a lookup: "Home|Away" -> { homeInj: [...], awayInj: [...] }
+      const injuryByFixture = {};
+      fixtureInjuries.forEach(fi => {
+        const homeInj = fi.injuries[Object.keys(fi.injuries).find(k => teamsMatch(k, fi.home)) || ""] || [];
+        const awayInj = fi.injuries[Object.keys(fi.injuries).find(k => teamsMatch(k, fi.away)) || ""] || [];
+        injuryByFixture[`${fi.home}|${fi.away}`] = { homeInj, awayInj };
+      });
+
+      const fixtures = upcomingMatches.map(m => ({
+        home: m.homeTeam?.shortName || m.homeTeam?.name || "TBC",
+        away: m.awayTeam?.shortName || m.awayTeam?.name || "TBC",
+        date: new Date(m.utcDate).toLocaleDateString("en-GB", {weekday:"short",day:"numeric",month:"short"}),
+        time: new Date(m.utcDate).toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit"}),
+        utc: m.utcDate,
+        status: m.status
+      }));
 
       let rawStandings = [];
       if (standingsData.standings) {
@@ -285,7 +369,7 @@ export default async function handler(req, res) {
         }
       }
 
-      return { ...lg, fixtures, standings: mapStandings(rawStandings), injuries, oddsMap, trendMap: trendsMap };
+      return { ...lg, fixtures, standings: mapStandings(rawStandings), injuryByFixture, oddsMap, trendMap: trendsMap };
     }));
 
     const makePrompt = (batch) => {
@@ -302,13 +386,14 @@ export default async function handler(req, res) {
           const odds = lg.oddsMap?.[`${f.home}|${f.away}`] || {};
           const oddsStr = odds.home
             ? ` [Odds: H:${odds.home} D:${odds.draw} A:${odds.away}${odds.btts ? " BTTS:"+odds.btts : ""}${odds.over05 ? " O0.5:"+odds.over05 : ""}${odds.over15 ? " O1.5:"+odds.over15 : ""}${odds.homeToScore ? " "+f.home+"ToScore:"+odds.homeToScore : ""}${odds.awayToScore ? " "+f.away+"ToScore:"+odds.awayToScore : ""}]`
-            : "";
+            : " [Odds: NOT AVAILABLE for this fixture]";
 
-          const homeInj = getInjuriesForTeam(lg.injuries, f.home).slice(0, 5).join(", ");
-          const awayInj = getInjuriesForTeam(lg.injuries, f.away).slice(0, 5).join(", ");
+          const injData = lg.injuryByFixture?.[`${f.home}|${f.away}`] || { homeInj: [], awayInj: [] };
+          const homeInj = injData.homeInj.slice(0, 5).join(", ");
+          const awayInj = injData.awayInj.slice(0, 5).join(", ");
           const injStr = (homeInj || awayInj)
             ? `\n   Injuries/Suspensions: ${f.home}: ${homeInj||"None"} | ${f.away}: ${awayInj||"None"}`
-            : "\n   Injuries/Suspensions: None reported for either team";
+            : "\n   Injuries/Suspensions: None confirmed for this fixture";
 
           return `${i+1}. ${f.home} vs ${f.away} — ${f.date} ${f.time}${trendStr}${oddsStr}${injStr}`;
         }).join("\n");
@@ -336,7 +421,7 @@ Return ONLY raw JSON starting with {:
 
 RULES:
 - primary.pick MUST always be "[Team] to Score" e.g. "Arsenal to Score"
-- primary.odds: use the real "[Team]ToScore" odds from the data above
+- primary.odds: use ONLY the real "[Team]ToScore" odds explicitly shown in the data above (e.g. HomeToScore or AwayToScore). If NO ToScore odd is shown for this fixture, write "N/A" — NEVER invent or estimate an odds value
 - primary.reason: 3-4 sentences referencing scoring form, xG, key attackers, defensive weaknesses, injury impact
 - injuries: use REAL data from above, max 4 players, always include suspended players — or "None"
 - builders: use real bookmaker odds from the data (H/D/A, BTTS, O0.5, O1.5)
