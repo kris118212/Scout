@@ -12,6 +12,9 @@
     { "src": "/api/data", "dest": "/api/data.js" },
     { "src": "/api/claude", "dest": "/api/claude.js" }
   ],
+  "functions": {
+    "api/refresh.js": { "maxDuration": 300 }
+  },
   "crons": [
     { "path": "/api/refresh", "schedule": "0 6 * * *" }
   ]
