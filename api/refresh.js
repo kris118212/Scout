@@ -103,61 +103,60 @@ function teamsMatch(a, b) {
   return wa.some(w => wb.includes(w));
 }
 
-// Fetch injuries for a specific fixture by its API-Sports fixture ID.
-// This is the most reliable method — avoids all team name matching issues.
-async function getInjuriesByFixture(fixtureId) {
+// Use Claude with web search to fetch current injury & suspension news for a
+// batch of teams. Returns a map of teamName -> ["Player (reason)", ...]
+// Only includes players injured/suspended within 10 days of the fixture date.
+async function getInjuriesViaWebSearch(teams, leagueName, matchDate) {
+  if (!teams || teams.length === 0) return {};
   try {
-    const data = await afFetch(`/injuries?fixture=${fixtureId}`);
-    const result = {};
-    (data.response || []).forEach(item => {
-      const teamName = item.team?.name || "";
-      const player = item.player?.name || "";
-      const type = item.player?.type || "";
-      const reason = item.player?.reason || "injured";
-      if (!teamName || !player) return;
-      const label = (type === "Suspension" || reason.toLowerCase().includes("suspend"))
-        ? `${player} (suspended)`
-        : `${player} (${reason})`;
-      if (!result[teamName]) result[teamName] = [];
-      result[teamName].push(label);
+    const dateStr = matchDate
+      ? new Date(matchDate).toLocaleDateString("en-GB", {day:"numeric", month:"long", year:"numeric"})
+      : new Date().toLocaleDateString("en-GB", {day:"numeric", month:"long", year:"numeric"});
+
+    const teamList = teams.join(", ");
+    const prompt = `You are a football injury researcher. Today is ${dateStr}.
+
+Search the web right now for the LATEST 2025/2026 season injury and suspension news for these ${leagueName} teams: ${teamList}
+
+For each team, list players who are CONFIRMED injured or suspended and will MISS the match on or around ${dateStr}.
+Only include players who are definitely OUT — do not include doubts or maybes.
+Prioritise key players (starting XI calibre).
+
+Return ONLY a raw JSON object, no markdown:
+{"TeamName":["Player Name (injury/suspended)","Player Name (hamstring)"],"TeamName2":[]}
+
+Rules:
+- Use the exact team names as given above
+- Max 5 players per team
+- If no confirmed absences, use empty array []
+- injury reason must be brief: "hamstring", "knee", "suspended", "ACL" etc
+- NEVER invent players — only include confirmed absences from real sources
+- Return {} if you cannot find reliable information`;
+
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_KEY,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-5",
+        max_tokens: 2000,
+        tools: [{ type: "web_search_20250305", name: "web_search" }],
+        messages: [{ role: "user", content: prompt }]
+      })
     });
-    return result;
-  } catch(e) {
+    const data = await r.json();
+    // Extract the final text response (after any tool use blocks)
+    const textBlock = (data.content || []).filter(b => b.type === "text").pop();
+    const raw = (textBlock?.text || "").replace(/```json|```/g, "").trim();
+    const s = raw.indexOf("{"), e = raw.lastIndexOf("}");
+    if (s === -1 || e === -1) return {};
+    return JSON.parse(raw.slice(s, e + 1));
+  } catch(err) {
     return {};
   }
-}
-
-// For a given league, get the API-Sports fixture IDs for upcoming matches
-// so we can fetch injuries per-fixture rather than per-league.
-async function getAfFixtureIds(afId, season, dateFrom, dateTo) {
-  try {
-    const fmt = d => d.toISOString().split("T")[0];
-    const data = await afFetch(`/fixtures?league=${afId}&season=${season}&from=${fmt(dateFrom)}&to=${fmt(dateTo)}&status=NS-TBD`);
-    // Returns a map of "HomeTeam|AwayTeam" -> fixtureId
-    const map = {};
-    (data.response || []).forEach(f => {
-      const home = f.teams?.home?.name || "";
-      const away = f.teams?.away?.name || "";
-      const id = f.fixture?.id;
-      if (home && away && id) map[`${home}|${away}`] = id;
-    });
-    return map;
-  } catch(e) {
-    return {};
-  }
-}
-
-// Given a fixture ID map and fuzzy team names from football-data.org,
-// find the best matching API-Sports fixture ID.
-function findAfFixtureId(fixtureIdMap, fdHome, fdAway) {
-  // Try direct key first
-  if (fixtureIdMap[`${fdHome}|${fdAway}`]) return fixtureIdMap[`${fdHome}|${fdAway}`];
-  // Fuzzy search
-  for (const [key, id] of Object.entries(fixtureIdMap)) {
-    const [afHome, afAway] = key.split("|");
-    if (teamsMatch(afHome, fdHome) && teamsMatch(afAway, fdAway)) return id;
-  }
-  return null;
 }
 
 // Search all bookmakers for a market, returning the first match found.
@@ -324,34 +323,14 @@ export default async function handler(req, res) {
     } catch(e) {}
 
     const leagueData = await Promise.all(LEAGUES.map(async lg => {
-      const [fixturesData, standingsData, oddsMap, fixtureIdMap] = await Promise.all([
+      const [fixturesData, standingsData, oddsMap] = await Promise.all([
         fdFetch(`/competitions/${lg.id}/matches?dateFrom=${fmt(now)}&dateTo=${fmt(end14)}`).catch(() => ({})),
         fdFetch(`/competitions/${lg.id}/standings`).catch(() => ({})),
-        getOdds(lg.afId, lg.season),
-        getAfFixtureIds(lg.afId, lg.season, now, end14)
+        getOdds(lg.afId, lg.season)
       ]);
 
       const finished = ["FINISHED","IN_PLAY","PAUSED","SUSPENDED","CANCELLED","POSTPONED"];
       const upcomingMatches = (fixturesData.matches || []).filter(m => !finished.includes(m.status));
-
-      // Fetch injuries per fixture in parallel (up to first 10 fixtures)
-      const top10 = upcomingMatches.slice(0, 10);
-      const fixtureInjuries = await Promise.all(top10.map(async m => {
-        const fdHome = m.homeTeam?.shortName || m.homeTeam?.name || "";
-        const fdAway = m.awayTeam?.shortName || m.awayTeam?.name || "";
-        const afId = findAfFixtureId(fixtureIdMap, fdHome, fdAway);
-        if (!afId) return { home: fdHome, away: fdAway, injuries: {} };
-        const inj = await getInjuriesByFixture(afId);
-        return { home: fdHome, away: fdAway, injuries: inj };
-      }));
-
-      // Build a lookup: "Home|Away" -> { homeInj: [...], awayInj: [...] }
-      const injuryByFixture = {};
-      fixtureInjuries.forEach(fi => {
-        const homeInj = fi.injuries[Object.keys(fi.injuries).find(k => teamsMatch(k, fi.home)) || ""] || [];
-        const awayInj = fi.injuries[Object.keys(fi.injuries).find(k => teamsMatch(k, fi.away)) || ""] || [];
-        injuryByFixture[`${fi.home}|${fi.away}`] = { homeInj, awayInj };
-      });
 
       const fixtures = upcomingMatches.map(m => ({
         home: m.homeTeam?.shortName || m.homeTeam?.name || "TBC",
@@ -361,6 +340,28 @@ export default async function handler(req, res) {
         utc: m.utcDate,
         status: m.status
       }));
+
+      // Collect unique teams from first 10 fixtures for injury lookups
+      const top10 = fixtures.slice(0, 10);
+      const uniqueTeams = [...new Set(top10.flatMap(f => [f.home, f.away]))];
+      // Use the earliest fixture date as reference point for the search
+      const earliestUtc = upcomingMatches[0]?.utcDate || now.toISOString();
+
+      // Fetch injury news via web search (more reliable than API-Sports for current data)
+      const injuryMap = await getInjuriesViaWebSearch(uniqueTeams, lg.name, earliestUtc);
+
+      // Build per-fixture injury lookup
+      const injuryByFixture = {};
+      top10.forEach(f => {
+        // Match team names case-insensitively against the web-search returned keys
+        const findKey = (name) => Object.keys(injuryMap).find(k =>
+          k.toLowerCase() === name.toLowerCase() || teamsMatch(k, name)
+        );
+        injuryByFixture[`${f.home}|${f.away}`] = {
+          homeInj: injuryMap[findKey(f.home) || ""] || [],
+          awayInj: injuryMap[findKey(f.away) || ""] || []
+        };
+      });
 
       let rawStandings = [];
       if (standingsData.standings) {
