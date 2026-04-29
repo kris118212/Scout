@@ -266,16 +266,18 @@ ${dataSummary}
 TASK: For each league, pick up to 5 fixtures and provide betting analysis.
 
 Return ONLY raw JSON starting with {:
-{"leagues":[{"league":"name","flag":"emoji","context":"one sentence","picks":[{"home":"team","away":"team","date":"date","time":"time","primary":{"pick":"[Team] to Score","xg":1.8,"odds":"1.55","confidence":"High","reason":"2 sentences","injuries":"list real injuries/suspensions from data above or None"},"builders":[{"name":"[Team] Win","odds":"1.60","confidence":"High"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"High"},{"name":"BTTS","odds":"1.70","confidence":"Medium"}],"combo":{"name":"Win + Goals","picks":["[Team] Win","Over 1.5 Goals"],"odds":"2.35","reason":"brief reason"},"form":[{"result":"W","score":"2-0","xg":2.1,"actual":2},{"result":"D","score":"1-1","xg":1.3,"actual":1},{"result":"W","score":"3-1","xg":2.4,"actual":3},{"result":"L","score":"0-1","xg":0.9,"actual":0},{"result":"W","score":"2-1","xg":1.7,"actual":2}],"tags":["tag1","tag2"]}]}]}
+{"leagues":[{"league":"name","flag":"emoji","context":"one sentence","picks":[{"home":"team","away":"team","date":"date","time":"time","primary":{"pick":"[Team] to Score","xg":1.8,"odds":"1.55","confidence":"High","reason":"3-4 sentences: explain why this team is likely to score — reference their recent scoring form, xG, key attackers, opponent defensive weaknesses, and any relevant injuries/suspensions","injuries":"list real injuries/suspensions from data above or None"},"builders":[{"name":"[Team] Win","odds":"1.60","confidence":"High","reason":"1-2 sentences explaining why this specific pick makes sense given form, injuries and match context"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"High","reason":"1-2 sentences explaining why goals are expected in this fixture"},{"name":"BTTS","odds":"1.70","confidence":"Medium","reason":"1-2 sentences explaining why both teams are likely to score"}],"combo":{"name":"Win + Goals","picks":["[Team] Win","Over 1.5 Goals"],"odds":"2.35","reason":"2-3 sentences explaining why these picks combine well and the overall match narrative supporting this bet"},"form":[{"result":"W","score":"2-0","xg":2.1,"actual":2},{"result":"D","score":"1-1","xg":1.3,"actual":1},{"result":"W","score":"3-1","xg":2.4,"actual":3},{"result":"L","score":"0-1","xg":0.9,"actual":0},{"result":"W","score":"2-1","xg":1.7,"actual":2}],"tags":["tag1","tag2"]}]}]}
 
 RULES:
 - primary.pick MUST always be "[Team] to Score" e.g. "Arsenal to Score"
 - primary.odds: use the real "[Team]ToScore" odds from the data above — e.g. if picking Arsenal (home), use the HomeToScore odd. If picking away team, use AwayToScore odd
+- primary.reason: 3-4 sentences — reference recent scoring form, xG trend, key attackers, opponent defensive record, and injury impact
 - injuries: use REAL data provided above, max 4 players e.g. "Havertz (injured), Timber (injured)" or "None"
-- Use real bookmaker odds where available for builder and combo odds
+- builders: use real bookmaker odds from the data above (H/D/A odds, BTTS, O1.5) — each builder pick MUST have a reason field (1-2 sentences of specific analysis)
+- combo.reason: 2-3 sentences explaining the overall match narrative and why these picks combine well
 - NEVER put to score or over 0.5 in builders — primary only
-- NEVER suggest Over 2.5 Goals — maximum Over 1.5 Goals
-- builders: 3 picks that combine well — Win/Double Chance, Over 1.5, BTTS, or HT/FT
+- NEVER suggest Over 0.5 Goals or Over 2.5 Goals — maximum Over 1.5 Goals only
+- builders: 3 picks — Win/Double Chance, Over 1.5, BTTS, or HT/FT
 - combo: ONE combination of 2-3 builder picks with a SINGLE combined odds value e.g. "2.80"
 - form: 5 items most recent first
 - No markdown fences`;
