@@ -23,47 +23,29 @@ async function afFetch(path) {
   return r.json();
 }
 
-async function callClaude(prompt, retries = 2) {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      // web_search_20250305 is a server-side tool — Anthropic executes searches
-      // automatically. We make a single request; the API handles all tool calls
-      // internally and returns the final response in one shot.
-      const r = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": process.env.ANTHROPIC_KEY,
-          "anthropic-version": "2023-06-01"
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 8000,
-          messages: [{ role: "user", content: prompt }]
-        })
-      });
-      const data = await r.json();
-
-      if (data.error) {
-        if (attempt === retries) return "ERROR:" + JSON.stringify(data.error);
-        continue;
-      }
-
-      // Extract all text blocks from the response
-      const blocks = data.content || [];
-      const text = blocks
-        .filter(b => b.type === "text")
-        .map(b => b.text)
-        .join("");
-
-      if (text.length > 100) return text;
-      if (attempt < retries) continue;
-      return text;
-    } catch(e) {
-      if (attempt === retries) throw e;
-    }
+async function callClaude(prompt) {
+  // Single attempt — no retries to avoid hammering rate limits
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_KEY,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 8000,
+        messages: [{ role: "user", content: prompt }]
+      })
+    });
+    const data = await r.json();
+    if (data.error) return "ERROR:" + JSON.stringify(data.error);
+    const blocks = data.content || [];
+    return blocks.filter(b => b.type === "text").map(b => b.text).join("");
+  } catch(e) {
+    return "ERROR:" + e.message;
   }
-  return "";
 }
 
 async function kvSet(key, value) {
@@ -330,13 +312,8 @@ Respond with ONLY this JSON structure (no markdown):
 Rules: primary.pick="[Team] to Score". Use real odds from data. injuries="Not available". combo.odds="CALCULATE". Raw JSON only.`;
     };
 
-    // One league per call, staggered to stay within rate limits
-    const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const raws = [];
-    for (let i = 0; i < leagueData.length; i++) {
-      if (i > 0) await sleep(15000);
-      raws.push(await callClaude(makePrompt(leagueData.slice(i, i + 1))));
-    }
+    // All 8 leagues in parallel — prompt is small enough (~500 tokens each) to fit well within rate limits
+    const raws = await Promise.all(leagueData.map(lg => callClaude(makePrompt([lg]))));
     let rawA = raws[0]||"", rawB = raws[1]||"", rawC = raws[2]||"", rawD = raws[3]||"";
     const rawE = raws[4]||"", rawF = raws[5]||"", rawG = raws[6]||"", rawH = raws[7]||"";
 
