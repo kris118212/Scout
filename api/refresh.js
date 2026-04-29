@@ -154,49 +154,26 @@ function extractMarket(bookmakers, marketName) {
 
 async function getOdds(afId, season) {
   try {
-    // Fetch Bet365 (id=6) as primary, plus all bookmakers as fallback pool.
-    // This ensures we get Team To Score odds even when Bet365 doesn't offer
-    // that market for a particular league or fixture.
-    const [bet365Data, allData] = await Promise.all([
-      afFetch(`/odds?league=${afId}&season=${season}&bookmaker=6`).catch(() => ({})),
-      afFetch(`/odds?league=${afId}&season=${season}`).catch(() => ({}))
-    ]);
-
-    // Build fallback pool: fixture key -> all bookmakers for that fixture
-    const fallbackPool = {};
-    (allData.response || []).forEach(item => {
-      const home = item.fixture?.teams?.home?.name || "";
-      const away = item.fixture?.teams?.away?.name || "";
-      if (home && away) fallbackPool[`${home}|${away}`] = item.bookmakers || [];
-    });
+    // Single call without bookmaker filter — returns all bookmakers,
+    // we pick the best available odds per market from whatever is returned.
+    const data = await afFetch(`/odds?league=${afId}&season=${season}`).catch(() => ({}));
 
     const oddsMap = {};
-
-    // Use Bet365 results as primary; fall back to allData if Bet365 returned nothing
-    const primaryItems = (bet365Data.response || []).length > 0
-      ? (bet365Data.response || [])
-      : (allData.response || []);
-
-    primaryItems.forEach(item => {
+    (data.response || []).forEach(item => {
       const home = item.fixture?.teams?.home?.name || "";
       const away = item.fixture?.teams?.away?.name || "";
       if (!home || !away) return;
 
       const key = `${home}|${away}`;
-      const bet365Bets = item.bookmakers?.[0]?.bets || [];
-      const allBookmakers = fallbackPool[key] || item.bookmakers || [];
+      const allBookmakers = item.bookmakers || [];
 
-      // For each market value: try Bet365 first, then scan all bookmakers
       const getVal = (marketName, valueName) => {
-        const b365Market = bet365Bets.find(b => b.name === marketName);
-        const b365Val = b365Market?.values?.find(v => v.value === valueName)?.odd;
-        if (b365Val) return b365Val;
-        const fbMarket = extractMarket(allBookmakers, marketName);
-        return fbMarket?.values?.find(v => v.value === valueName)?.odd || null;
+        const market = extractMarket(allBookmakers, marketName);
+        return market?.values?.find(v => v.value === valueName)?.odd || null;
       };
 
       const homeOdd = getVal("Match Winner", "Home");
-      if (!homeOdd) return; // skip fixtures with no odds at all
+      if (!homeOdd) return;
 
       oddsMap[key] = {
         home: homeOdd,
@@ -306,7 +283,8 @@ export default async function handler(req, res) {
       });
     } catch(e) {}
 
-    const leagueData = await Promise.all(LEAGUES.map(async lg => {
+    const leagueData = [];
+    for (const lg of LEAGUES) {
       const [fixturesData, standingsData, oddsMap] = await Promise.all([
         fdFetch(`/competitions/${lg.id}/matches?dateFrom=${fmt(now)}&dateTo=${fmt(end14)}`).catch(() => ({})),
         fdFetch(`/competitions/${lg.id}/standings`).catch(() => ({})),
@@ -325,9 +303,6 @@ export default async function handler(req, res) {
         status: m.status
       }));
 
-      const top10 = fixtures.slice(0, 10);
-      // Injuries are fetched by Claude during analysis via web search — no pre-fetch needed
-
       let rawStandings = [];
       if (standingsData.standings) {
         for (const s of standingsData.standings) {
@@ -335,8 +310,8 @@ export default async function handler(req, res) {
         }
       }
 
-      return { ...lg, fixtures, standings: mapStandings(rawStandings), oddsMap, trendMap: trendsMap };
-    }));
+      leagueData.push({ ...lg, fixtures, standings: mapStandings(rawStandings), oddsMap, trendMap: trendsMap });
+    }
 
     const makePrompt = (batch) => {
       const today = now.toLocaleDateString("en-GB", {weekday:"long",day:"numeric",month:"long",year:"numeric"});
