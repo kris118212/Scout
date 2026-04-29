@@ -38,8 +38,7 @@ async function callClaude(prompt, retries = 2) {
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
-          max_tokens: 16000,
-          tools: [{ type: "web_search_20250305", name: "web_search" }],
+          max_tokens: 8000,
           messages: [{ role: "user", content: prompt }]
         })
       });
@@ -306,7 +305,7 @@ export default async function handler(req, res) {
             ? ` [Odds: H:${odds.home} D:${odds.draw} A:${odds.away}${odds.btts ? " BTTS:"+odds.btts : ""}${odds.over05 ? " O0.5:"+odds.over05 : ""}${odds.over15 ? " O1.5:"+odds.over15 : ""}${odds.homeToScore ? " "+f.home+"ToScore:"+odds.homeToScore : ""}${odds.awayToScore ? " "+f.away+"ToScore:"+odds.awayToScore : ""}]`
             : " [Odds: NOT AVAILABLE for this fixture]";
 
-          const injStr = `\n   Injuries/Suspensions: [USE WEB SEARCH to find current 2025/26 confirmed absences for ${f.home} and ${f.away}]`;
+
 
           return `${i+1}. ${f.home} vs ${f.away} — ${f.date} ${f.time}${trendStr}${oddsStr}${injStr}`;
         }).join("\n");
@@ -336,7 +335,7 @@ RULES:
 - primary.pick MUST always be "[Team] to Score" e.g. "Arsenal to Score"
 - primary.odds: use ONLY the real "[Team]ToScore" odds explicitly shown in the data above (e.g. HomeToScore or AwayToScore). If NO ToScore odd is shown for this fixture, write "N/A" — NEVER invent or estimate an odds value
 - primary.reason: 3-4 sentences referencing scoring form, xG, key attackers, defensive weaknesses, injury impact
-- injuries: use web search to find confirmed 2025/26 injuries and suspensions for both teams — max 4 key players each. Format: "Salah (hamstring), Bradley (knee)" or "None confirmed"
+- injuries: write "Not available"
 - builders: use real bookmaker odds from the data (H/D/A, BTTS, O0.5, O1.5)
 - builders MAY include Over 0.5 Goals (use O0.5 odd) and/or Over 1.5 Goals (use O1.5 odd)
 - NEVER suggest Over 2.5 Goals in builders or anywhere else
