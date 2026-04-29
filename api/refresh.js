@@ -1,6 +1,6 @@
 const LEAGUES = [
   {id:"PL",  name:"Premier League", flag:"🏴󠁧󠁢󠁥󠁮󠁧󠁿", afId:39,  season:2025},
-  {id:"ELC", name:"Championship",   flag:"🏴󠁧󠁢󠁥󠁮󠁧󠁿", afId:40,  season:2025},
+  {id:"ELC", name:"Championship",   flag:"🏴󠁧󠁢󠁥󠁮󠁧󠁿", afId:180, season:2025},
   {id:"PD",  name:"La Liga",        flag:"🇪🇸",         afId:140, season:2025},
   {id:"BL1", name:"Bundesliga",     flag:"🇩🇪",         afId:78,  season:2025},
   {id:"FL1", name:"Ligue 1",        flag:"🇫🇷",         afId:61,  season:2025},
@@ -118,7 +118,17 @@ async function getOdds(afId, season) {
       const bttsYes = btts?.values?.find(v => v.value === "Yes")?.odd;
       const ou = markets.find(b => b.name === "Goals Over/Under");
       const over15 = ou?.values?.find(v => v.value === "Over 1.5")?.odd;
-      oddsMap[`${home}|${away}`] = { home: homeOdd, draw: drawOdd, away: awayOdd, btts: bttsYes, over15 };
+
+      // Team To Score odds
+      const tts = markets.find(b => b.name === "Team To Score");
+      const homeToScore = tts?.values?.find(v => v.value === "Home")?.odd;
+      const awayToScore = tts?.values?.find(v => v.value === "Away")?.odd;
+
+      oddsMap[`${home}|${away}`] = {
+        home: homeOdd, draw: drawOdd, away: awayOdd,
+        btts: bttsYes, over15,
+        homeToScore, awayToScore
+      };
     });
     return oddsMap;
   } catch(e) {
@@ -225,7 +235,7 @@ export default async function handler(req, res) {
 
           const odds = lg.oddsMap?.[`${f.home}|${f.away}`] || {};
           const oddsStr = odds.home
-            ? ` [Odds: H:${odds.home} D:${odds.draw} A:${odds.away}${odds.btts ? " BTTS:"+odds.btts : ""}${odds.over15 ? " O1.5:"+odds.over15 : ""}]`
+            ? ` [Odds: H:${odds.home} D:${odds.draw} A:${odds.away}${odds.btts ? " BTTS:"+odds.btts : ""}${odds.over15 ? " O1.5:"+odds.over15 : ""}${odds.homeToScore ? " "+f.home+"ToScore:"+odds.homeToScore : ""}${odds.awayToScore ? " "+f.away+"ToScore:"+odds.awayToScore : ""}]`
             : "";
 
           const homeInj = (lg.injuries?.[f.home] || []).slice(0, 5).join(", ");
@@ -260,6 +270,7 @@ Return ONLY raw JSON starting with {:
 
 RULES:
 - primary.pick MUST always be "[Team] to Score" e.g. "Arsenal to Score"
+- primary.odds: use the real "[Team]ToScore" odds from the data above — e.g. if picking Arsenal (home), use the HomeToScore odd. If picking away team, use AwayToScore odd
 - injuries: use REAL data provided above, max 4 players e.g. "Havertz (injured), Timber (injured)" or "None"
 - Use real bookmaker odds where available for builder and combo odds
 - NEVER put to score or over 0.5 in builders — primary only
