@@ -34,7 +34,7 @@ async function callClaude(prompt, retries = 2) {
           "anthropic-version": "2023-06-01"
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-5",
+          model: "claude-sonnet-4-20250514",
           max_tokens: 12000,
           messages: [{ role: "user", content: prompt }]
         })
@@ -128,7 +128,7 @@ async function fetchInjuriesForTeams(teams, leagueName, refDate) {
         "anthropic-version": "2023-06-01"
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-5",
+        model: "claude-sonnet-4-20250514",
         max_tokens: 3000,
         tools: [{ type: "web_search_20250305", name: "web_search" }],
         tool_choice: { type: "auto" },
@@ -351,7 +351,11 @@ export default async function handler(req, res) {
       const earliestUtc = upcomingMatches[0]?.utcDate || now.toISOString();
 
       // Fetch confirmed injuries & suspensions via Claude web search
-      const injuryMap = await fetchInjuriesForTeams(uniqueTeams, lg.name, earliestUtc);
+      // Hard 8s timeout so a slow injury call never blocks the whole refresh
+      const injuryMap = await Promise.race([
+        fetchInjuriesForTeams(uniqueTeams, lg.name, earliestUtc),
+        new Promise(resolve => setTimeout(() => resolve({}), 8000))
+      ]);
 
       // Build per-fixture lookup — match returned team keys back to fixture names
       const injuryByFixture = {};
@@ -440,7 +444,8 @@ RULES:
 - No markdown fences`;
     };
 
-    const [rawA, rawB, rawC, rawD] = await Promise.all([
+    let rawA = "", rawB = "", rawC = "", rawD = "";
+    [rawA, rawB, rawC, rawD] = await Promise.all([
       callClaude(makePrompt(leagueData.slice(0, 2))),
       callClaude(makePrompt(leagueData.slice(2, 4))),
       callClaude(makePrompt(leagueData.slice(4, 6))),
@@ -477,7 +482,26 @@ RULES:
     await kvSet("scout_data", JSON.stringify(payload));
     await kvSet("scout_updated", now.toISOString());
 
-    res.status(200).json({ ok: true, leagues: allLeagues.length, updatedAt: now.toISOString() });
+    res.status(200).json({
+      ok: true,
+      leagues: allLeagues.length,
+      updatedAt: now.toISOString(),
+      debug: {
+        leagueDataFetched: leagueData.map(lg => ({
+          name: lg.name,
+          fixtures: lg.fixtures?.length || 0,
+          standings: lg.standings?.length || 0,
+          injuryKeys: Object.keys(lg.injuryByFixture || {}).length
+        })),
+        rawLengths: { a: rawA?.length || 0, b: rawB?.length || 0, c: rawC?.length || 0, d: rawD?.length || 0 },
+        rawPreviews: {
+          a: rawA?.slice(0, 200) || "",
+          b: rawB?.slice(0, 200) || "",
+          c: rawC?.slice(0, 200) || "",
+          d: rawD?.slice(0, 200) || ""
+        }
+      }
+    });
   } catch(err) {
     console.error(err);
     res.status(500).json({ error: err.message });
