@@ -23,6 +23,8 @@ async function afFetch(path) {
   return r.json();
 }
 
+const claudeErrors = [];
+
 async function callClaude(prompt, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -48,7 +50,7 @@ async function callClaude(prompt, retries = 2) {
         const data = await r.json();
 
         if (data.error) {
-          console.error("Claude API error:", JSON.stringify(data.error));
+          claudeErrors.push({ attempt, turn, error: data.error });
           break;
         }
 
@@ -78,7 +80,7 @@ async function callClaude(prompt, retries = 2) {
       if (attempt < retries) continue;
       return finalText;
     } catch(e) {
-      console.error("callClaude error:", e.message);
+      claudeErrors.push({ attempt, exception: e.message });
       if (attempt === retries) throw e;
     }
   }
@@ -449,7 +451,8 @@ RULES:
           b: rawB?.slice(0, 500) || "EMPTY",
           c: rawC?.slice(0, 500) || "EMPTY",
           d: rawD?.slice(0, 500) || "EMPTY"
-        }
+        },
+        claudeErrors
       }
     });
   } catch(err) {
