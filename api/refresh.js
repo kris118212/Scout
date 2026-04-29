@@ -40,7 +40,10 @@ async function callClaude(prompt, retries = 2) {
         })
       });
       const data = await r.json();
-      const text = data.content?.[0]?.text || "";
+      // Find last text block (handles cases where tool_use blocks appear)
+      const blocks = data.content || [];
+      const textBlock = [...blocks].reverse().find(b => b.type === "text");
+      const text = textBlock?.text || "";
       if (text.length > 100) return text;
       if (attempt < retries) continue;
       return text;
@@ -106,33 +109,17 @@ function teamsMatch(a, b) {
 // Use Claude with web search to fetch current injury & suspension news for a
 // batch of teams. Returns a map of teamName -> ["Player (reason)", ...]
 // Only includes players injured/suspended within 10 days of the fixture date.
-async function getInjuriesViaWebSearch(teams, leagueName, matchDate) {
+// Fetch injury & suspension data for a batch of teams via a dedicated
+// Claude call with web search. Returns map of teamName -> ["Player (reason)"]
+async function fetchInjuriesForTeams(teams, leagueName, refDate) {
   if (!teams || teams.length === 0) return {};
+  const dateStr = new Date(refDate).toLocaleDateString("en-GB", {
+    day: "numeric", month: "long", year: "numeric"
+  });
+  const today = new Date().toLocaleDateString("en-GB", {
+    day: "numeric", month: "long", year: "numeric"
+  });
   try {
-    const dateStr = matchDate
-      ? new Date(matchDate).toLocaleDateString("en-GB", {day:"numeric", month:"long", year:"numeric"})
-      : new Date().toLocaleDateString("en-GB", {day:"numeric", month:"long", year:"numeric"});
-
-    const teamList = teams.join(", ");
-    const prompt = `You are a football injury researcher. Today is ${dateStr}.
-
-Search the web right now for the LATEST 2025/2026 season injury and suspension news for these ${leagueName} teams: ${teamList}
-
-For each team, list players who are CONFIRMED injured or suspended and will MISS the match on or around ${dateStr}.
-Only include players who are definitely OUT — do not include doubts or maybes.
-Prioritise key players (starting XI calibre).
-
-Return ONLY a raw JSON object, no markdown:
-{"TeamName":["Player Name (injury/suspended)","Player Name (hamstring)"],"TeamName2":[]}
-
-Rules:
-- Use the exact team names as given above
-- Max 5 players per team
-- If no confirmed absences, use empty array []
-- injury reason must be brief: "hamstring", "knee", "suspended", "ACL" etc
-- NEVER invent players — only include confirmed absences from real sources
-- Return {} if you cannot find reliable information`;
-
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -142,19 +129,36 @@ Rules:
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-5",
-        max_tokens: 2000,
+        max_tokens: 3000,
         tools: [{ type: "web_search_20250305", name: "web_search" }],
-        messages: [{ role: "user", content: prompt }]
+        tool_choice: { type: "auto" },
+        messages: [{
+          role: "user",
+          content: `Today is ${today}. Search the web for the latest 2025/2026 ${leagueName} injury and suspension news for these teams: ${teams.join(", ")}.
+
+Find confirmed absentees — players who are DEFINITELY OUT for matches around ${dateStr}. Include suspensions and red-card bans.
+
+Return ONLY a JSON object (no markdown, no explanation):
+{"${teams[0]}":["Player Name (reason)"],"${teams[1] || teams[0]}":[]}`
+        }]
       })
     });
     const data = await r.json();
-    // Extract the final text response (after any tool use blocks)
-    const textBlock = (data.content || []).filter(b => b.type === "text").pop();
+    // Walk content blocks — take the last text block (after web search tool use)
+    const blocks = data.content || [];
+    const textBlock = [...blocks].reverse().find(b => b.type === "text");
     const raw = (textBlock?.text || "").replace(/```json|```/g, "").trim();
     const s = raw.indexOf("{"), e = raw.lastIndexOf("}");
     if (s === -1 || e === -1) return {};
-    return JSON.parse(raw.slice(s, e + 1));
+    const parsed = JSON.parse(raw.slice(s, e + 1));
+    // Normalise keys to lowercase for matching
+    const out = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      out[k] = Array.isArray(v) ? v : [];
+    }
+    return out;
   } catch(err) {
+    console.error("injury fetch error:", err.message);
     return {};
   }
 }
@@ -341,25 +345,24 @@ export default async function handler(req, res) {
         status: m.status
       }));
 
-      // Collect unique teams from first 10 fixtures for injury lookups
+      // Collect unique teams from the first 10 fixtures
       const top10 = fixtures.slice(0, 10);
       const uniqueTeams = [...new Set(top10.flatMap(f => [f.home, f.away]))];
-      // Use the earliest fixture date as reference point for the search
       const earliestUtc = upcomingMatches[0]?.utcDate || now.toISOString();
 
-      // Fetch injury news via web search (more reliable than API-Sports for current data)
-      const injuryMap = await getInjuriesViaWebSearch(uniqueTeams, lg.name, earliestUtc);
+      // Fetch confirmed injuries & suspensions via Claude web search
+      const injuryMap = await fetchInjuriesForTeams(uniqueTeams, lg.name, earliestUtc);
 
-      // Build per-fixture injury lookup
+      // Build per-fixture lookup — match returned team keys back to fixture names
       const injuryByFixture = {};
       top10.forEach(f => {
-        // Match team names case-insensitively against the web-search returned keys
-        const findKey = (name) => Object.keys(injuryMap).find(k =>
-          k.toLowerCase() === name.toLowerCase() || teamsMatch(k, name)
-        );
+        const findKey = (name) =>
+          Object.keys(injuryMap).find(k =>
+            k.toLowerCase() === name.toLowerCase() || teamsMatch(k, name)
+          ) || "";
         injuryByFixture[`${f.home}|${f.away}`] = {
-          homeInj: injuryMap[findKey(f.home) || ""] || [],
-          awayInj: injuryMap[findKey(f.away) || ""] || []
+          homeInj: injuryMap[findKey(f.home)] || [],
+          awayInj: injuryMap[findKey(f.away)] || []
         };
       });
 
@@ -392,9 +395,10 @@ export default async function handler(req, res) {
           const injData = lg.injuryByFixture?.[`${f.home}|${f.away}`] || { homeInj: [], awayInj: [] };
           const homeInj = injData.homeInj.slice(0, 5).join(", ");
           const awayInj = injData.awayInj.slice(0, 5).join(", ");
-          const injStr = (homeInj || awayInj)
-            ? `\n   Injuries/Suspensions: ${f.home}: ${homeInj||"None"} | ${f.away}: ${awayInj||"None"}`
-            : "\n   Injuries/Suspensions: None confirmed for this fixture";
+          const hasInj = homeInj || awayInj;
+          const injStr = hasInj
+            ? `\n   ✅ CONFIRMED Injuries/Suspensions (from web, use these): ${f.home}: ${homeInj||"None"} | ${f.away}: ${awayInj||"None"}`
+            : `\n   Injuries/Suspensions: None confirmed — do NOT invent any`;
 
           return `${i+1}. ${f.home} vs ${f.away} — ${f.date} ${f.time}${trendStr}${oddsStr}${injStr}`;
         }).join("\n");
@@ -424,7 +428,7 @@ RULES:
 - primary.pick MUST always be "[Team] to Score" e.g. "Arsenal to Score"
 - primary.odds: use ONLY the real "[Team]ToScore" odds explicitly shown in the data above (e.g. HomeToScore or AwayToScore). If NO ToScore odd is shown for this fixture, write "N/A" — NEVER invent or estimate an odds value
 - primary.reason: 3-4 sentences referencing scoring form, xG, key attackers, defensive weaknesses, injury impact
-- injuries: use REAL data from above, max 4 players, always include suspended players — or "None"
+- injuries: copy EXACTLY from the "✅ CONFIRMED Injuries/Suspensions" lines above — max 4 players. If the line says "None confirmed" write "None". NEVER invent names.
 - builders: use real bookmaker odds from the data (H/D/A, BTTS, O0.5, O1.5)
 - builders MAY include Over 0.5 Goals (use O0.5 odd) and/or Over 1.5 Goals (use O1.5 odd)
 - NEVER suggest Over 2.5 Goals in builders or anywhere else
