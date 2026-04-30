@@ -271,7 +271,31 @@ export default async function handler(req, res) {
         }
       }
 
-      leagueData.push({ ...lg, fixtures, standings: mapStandings(rawStandings), oddsMap, trendMap: trendsMap });
+      // Fetch last 6 weeks of finished matches for real form data
+      let recentResults = {};
+      try {
+        const past = new Date(now); past.setDate(now.getDate() - 42);
+        const fmtDate = d => d.toISOString().split("T")[0];
+        const recentData = await fdFetch(`/competitions/${lg.id}/matches?status=FINISHED&dateFrom=${fmtDate(past)}&dateTo=${fmtDate(now)}&limit=100`).catch(() => ({}));
+        (recentData.matches || []).forEach(m => {
+          const home = m.homeTeam?.shortName || m.homeTeam?.name || "";
+          const away = m.awayTeam?.shortName || m.awayTeam?.name || "";
+          const hg = m.score?.fullTime?.home ?? m.score?.fullTime?.homeTeam;
+          const ag = m.score?.fullTime?.away ?? m.score?.fullTime?.awayTeam;
+          if (hg === null || hg === undefined || ag === null || ag === undefined) return;
+          const date = new Date(m.utcDate).toLocaleDateString("en-GB", {day:"numeric",month:"short"});
+          if (home) {
+            if (!recentResults[home]) recentResults[home] = [];
+            recentResults[home].push({ r: hg>ag?"W":hg<ag?"L":"D", s:`${hg}-${ag}`, opp:away, date });
+          }
+          if (away) {
+            if (!recentResults[away]) recentResults[away] = [];
+            recentResults[away].push({ r: ag>hg?"W":ag<hg?"L":"D", s:`${ag}-${hg}`, opp:home, date });
+          }
+        });
+      } catch(e) {}
+
+      leagueData.push({ ...lg, fixtures, standings: mapStandings(rawStandings), oddsMap, trendMap: trendsMap, recentResults });
     }
 
     const makePrompt = (batch) => {
@@ -297,7 +321,17 @@ export default async function handler(req, res) {
 
 
 
-          return `${i+1}. ${f.home} vs ${f.away} — ${f.date} ${f.time}${trendStr}${oddsStr}`;
+          // Real last 5 results for each team
+          const homeResults = (lg.recentResults?.[f.home] || []).slice(-5).reverse();
+          const awayResults = (lg.recentResults?.[f.away] || []).slice(-5).reverse();
+          const fmtResults = results => results.length
+            ? results.map(r => `${r.r} ${r.s} vs ${r.opp}`).join(", ")
+            : "no recent data";
+          const formStr = `
+   ${f.home} last 5: ${fmtResults(homeResults)}
+   ${f.away} last 5: ${fmtResults(awayResults)}`;
+
+          return `${i+1}. ${f.home} vs ${f.away} — ${f.date} ${f.time}${trendStr}${oddsStr}${formStr}`;
         }).join("\n");
 
         const tableLines = lg.standings.slice(0, 6).map(t =>
@@ -337,7 +371,8 @@ STRICT RULES:
 - builders: use real H/D/A/BTTS/O0.5/O1.5 odds. Never suggest Over 2.5. Never put "to score" in builders
 - builders MAY include Over 0.5 Goals and/or Over 1.5 Goals  
 - combo.odds: always write "CALCULATE"
-- form: 5 most recent results for the primary pick team, most recent first
+- form: use EXACTLY the real results provided above in "[Team] last 5" — copy them directly into the form array. NEVER invent scores or results.
+- reason: base ALL analysis on the real results shown above. NEVER use training knowledge for recent scores, form or player transfers — only use what is in the data above.
 - Raw JSON only — absolutely no text before or after the JSON object`;
     };
 
