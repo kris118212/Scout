@@ -1,12 +1,12 @@
 const LEAGUES = [
-  {id:"PL",  name:"Premier League", flag:"🏴󠁧󠁢󠁥󠁮󠁧󠁿", flagCode:"gb-eng", afId:39,  season:2025},
-  {id:"ELC", name:"Championship",   flag:"🏴󠁧󠁢󠁥󠁮󠁧󠁿", flagCode:"gb-eng", afId:180, season:2025},
-  {id:"PD",  name:"La Liga",        flag:"🇪🇸",         flagCode:"es",     afId:140, season:2025},
-  {id:"BL1", name:"Bundesliga",     flag:"🇩🇪",         flagCode:"de",     afId:78,  season:2025},
-  {id:"FL1", name:"Ligue 1",        flag:"🇫🇷",         flagCode:"fr",     afId:61,  season:2025},
-  {id:"SA",  name:"Serie A",        flag:"🇮🇹",         flagCode:"it",     afId:135, season:2025},
-  {id:"DED", name:"Eredivisie",     flag:"🇳🇱",         flagCode:"nl",     afId:88,  season:2025},
-  {id:"PPL", name:"Primeira Liga",  flag:"🇵🇹",         flagCode:"pt",     afId:94,  season:2025}
+  {id:"PL",  name:"Premier League", flag:"", flagCode:"gb-eng", afId:39,  season:2025},
+  {id:"ELC", name:"Championship",   flag:"", flagCode:"gb-eng", afId:180, season:2025},
+  {id:"PD",  name:"La Liga",        flag:"", flagCode:"es",     afId:140, season:2025},
+  {id:"BL1", name:"Bundesliga",     flag:"", flagCode:"de",     afId:78,  season:2025},
+  {id:"FL1", name:"Ligue 1",        flag:"", flagCode:"fr",     afId:61,  season:2025},
+  {id:"SA",  name:"Serie A",        flag:"", flagCode:"it",     afId:135, season:2025},
+  {id:"DED", name:"Eredivisie",     flag:"", flagCode:"nl",     afId:88,  season:2025},
+  {id:"PPL", name:"Primeira Liga",  flag:"", flagCode:"pt",     afId:94,  season:2025}
 ];
 
 async function fdFetch(path) {
