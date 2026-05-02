@@ -371,7 +371,7 @@ export default async function handler(req, res) {
       const lgName = batch[0]?.name || "";
 
       const dataSummary = batch.map(lg => {
-        const topFixtures = rankFixtures(lg, 5);
+        const topFixtures = rankFixtures(lg, 6);
 
         // If no real fixtures exist for this league, return a skip signal
         if (!topFixtures.length) {
@@ -389,8 +389,8 @@ STATUS: NO UPCOMING FIXTURES — skip this league entirely, return zero picks`;
             ? ` [Odds: H:${odds.home} D:${odds.draw} A:${odds.away}${odds.btts?" BTTS:"+odds.btts:""}${odds.over05?" O0.5:"+odds.over05:""}${odds.over15?" O1.5:"+odds.over15:""}${odds.homeToScore?" "+f.home+"ToScore:"+odds.homeToScore:""}${odds.awayToScore?" "+f.away+"ToScore:"+odds.awayToScore:""}]`
             : " [Odds: NOT AVAILABLE]";
 
-          const hR = (lg.recentResults?.[f.home]||[]).slice(-5).reverse();
-          const aR = (lg.recentResults?.[f.away]||[]).slice(-5).reverse();
+          const hR = (findResults(f.home)||[]).slice(-5).reverse();
+          const aR = (findResults(f.away)||[]).slice(-5).reverse();
           const fmtR = r => r.length ? r.map(x=>`${x.r} ${x.s} vs ${x.opp}`).join(", ") : "no data";
 
           const xgStr = ` [REAL DATA — USE EXACTLY: ${f.home} xG=${f.hXG?.toFixed(2)||"?"} avgScored=${f.hScored?.toFixed(2)||"?"} | ${f.away} xG=${f.aXG?.toFixed(2)||"?"} avgScored=${f.aScored?.toFixed(2)||"?"} | PICK: ${f.pickTeam} to Score xG=${f.pickXG} confidence=${f.conf}]`;
@@ -410,9 +410,9 @@ STATUS: NO UPCOMING FIXTURES — skip this league entirely, return zero picks`;
 
 ${dataSummary}
 
-CRITICAL: Fixtures are PRE-RANKED using real API data. You MUST only pick from the exact fixtures listed above.
-If a league shows "NO UPCOMING FIXTURES" — return zero picks for that league (empty picks array []).
-NEVER invent, substitute or hallucinate fixtures. If a fixture is not in the list above it does not exist.
+Fixtures are PRE-RANKED by real scoring data. You MUST return exactly 5 picks (or all available if fewer than 5 fixtures listed). The [REAL DATA] block contains server-calculated values you MUST use.
+If a league shows "NO UPCOMING FIXTURES" — return zero picks (empty array []).
+NEVER invent fixtures. Only use fixtures from the numbered list above.
 
 Return ONLY this JSON (no markdown, no backticks):
 {"leagues":[{"league":"${lgName}","flag":"PLACEHOLDER","context":"one sentence on league situation","picks":[{"home":"TeamA","away":"TeamB","date":"Sat 2 May","time":"15:00","primary":{"pick":"TeamA to Score","xg":1.42,"odds":"1.45","confidence":"High","reason":"3 sentences referencing the REAL last 5 results and the REAL xG figures. Be specific about actual scores from last 5."},"builders":[{"name":"TeamA Win","odds":"1.75","confidence":"High","reason":"1-2 sentences"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"Medium","reason":"1-2 sentences"},{"name":"BTTS","odds":"1.80","confidence":"Medium","reason":"1-2 sentences"}],"combo":{"name":"Win + Goals","picks":["TeamA Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"1-2 sentences"},"form":[{"result":"W","score":"2-0","xg":1.8,"actual":2},{"result":"L","score":"0-1","xg":0.9,"actual":0},{"result":"W","score":"1-0","xg":1.2,"actual":1},{"result":"D","score":"1-1","xg":1.1,"actual":1},{"result":"W","score":"2-1","xg":1.6,"actual":2}],"tags":["tag1","tag2"]}]}]}
