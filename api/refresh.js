@@ -299,6 +299,13 @@ export default async function handler(req, res) {
     }
 
     // ── Server-side fixture ranking with real xG ────────────────────────────
+      // Fuzzy name match for recentResults lookup — used in both rankFixtures and makePrompt
+      const findResults = (lg, name) => {
+        if (lg.recentResults?.[name]) return lg.recentResults[name];
+        const key = Object.keys(lg.recentResults||{}).find(k => teamsMatch(k, name));
+        return key ? lg.recentResults[key] : [];
+      };
+
     function rankFixtures(lg, topN) {
       // xG model — balanced approach:
       // - Use actual goals scored/conceded, capped at 4 per game (removes freakish outliers)
@@ -330,16 +337,9 @@ export default async function handler(req, res) {
         return raw * (1 - REGRESSION) + LEAGUE_AVG * REGRESSION;
       };
 
-      // Fuzzy name match for recentResults lookup
-      const findResults = (name) => {
-        if (lg.recentResults?.[name]) return lg.recentResults[name];
-        const key = Object.keys(lg.recentResults||{}).find(k => teamsMatch(k, name));
-        return key ? lg.recentResults[key] : [];
-      };
-
       const ranked = lg.fixtures.map(f => {
-        const hr = findResults(f.home);
-        const ar = findResults(f.away);
+        const hr = findResults(lg, f.home);
+        const ar = findResults(lg, f.away);
         const hScored = calcAvg(hr, 8, "scored", "H");
         const aScored = calcAvg(ar, 8, "scored", "A");
         const hConc   = calcAvg(hr, 8, "conc",   "H");
@@ -389,8 +389,8 @@ STATUS: NO UPCOMING FIXTURES — skip this league entirely, return zero picks`;
             ? ` [Odds: H:${odds.home} D:${odds.draw} A:${odds.away}${odds.btts?" BTTS:"+odds.btts:""}${odds.over05?" O0.5:"+odds.over05:""}${odds.over15?" O1.5:"+odds.over15:""}${odds.homeToScore?" "+f.home+"ToScore:"+odds.homeToScore:""}${odds.awayToScore?" "+f.away+"ToScore:"+odds.awayToScore:""}]`
             : " [Odds: NOT AVAILABLE]";
 
-          const hR = (findResults(f.home)||[]).slice(-5).reverse();
-          const aR = (findResults(f.away)||[]).slice(-5).reverse();
+          const hR = (findResults(lg, f.home)||[]).slice(-5).reverse();
+          const aR = (findResults(lg, f.away)||[]).slice(-5).reverse();
           const fmtR = r => r.length ? r.map(x=>`${x.r} ${x.s} vs ${x.opp}`).join(", ") : "no data";
 
           const xgStr = ` [REAL DATA — USE EXACTLY: ${f.home} xG=${f.hXG?.toFixed(2)||"?"} avgScored=${f.hScored?.toFixed(2)||"?"} | ${f.away} xG=${f.aXG?.toFixed(2)||"?"} avgScored=${f.aScored?.toFixed(2)||"?"} | PICK: ${f.pickTeam} to Score xG=${f.pickXG} confidence=${f.conf}]`;
