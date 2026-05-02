@@ -298,82 +298,92 @@ export default async function handler(req, res) {
       leagueData.push({ ...lg, fixtures, standings: mapStandings(rawStandings), oddsMap, trendMap: trendsMap, recentResults });
     }
 
+    // ── Server-side fixture ranking with real xG ────────────────────────────
+    function rankFixtures(lg, topN) {
+      const calcAvg = (results, last, field) => {
+        const games = results.slice(-last);
+        if (!games.length) return null;
+        const total = games.reduce((s, g) => {
+          const p = (g.s||"0-0").split("-");
+          return s + (parseInt(field==="scored"?p[0]:p[1])||0);
+        }, 0);
+        return total / games.length;
+      };
+
+      const ranked = lg.fixtures.map(f => {
+        const hr = lg.recentResults?.[f.home] || [];
+        const ar = lg.recentResults?.[f.away] || [];
+        const hScored = calcAvg(hr, 8, "scored");
+        const aScored = calcAvg(ar, 8, "scored");
+        const hConc   = calcAvg(hr, 8, "conc");
+        const aConc   = calcAvg(ar, 8, "conc");
+        // xG = attacker avg scored (60%) + opponent avg conceded (40%)
+        const hXG = hScored !== null ? ((hScored*0.6) + ((aConc||1.2)*0.4)) : null;
+        const aXG = aScored !== null ? ((aScored*0.6) + ((hConc||1.2)*0.4)) : null;
+        const bestXG = Math.max(hXG||0, aXG||0);
+        const pickTeam = (hXG||0) >= (aXG||0) ? f.home : f.away;
+        const pickXG   = pickTeam === f.home ? hXG : aXG;
+        const conf = bestXG >= 1.5 ? "High" : bestXG >= 1.0 ? "Medium" : "Low";
+        return { ...f, hXG, aXG, hScored, aScored, hConc, aConc, bestXG, pickTeam, pickXG: pickXG?.toFixed(2), conf };
+      });
+
+      return ranked.filter(f => f.bestXG > 0.4)
+                   .sort((a,b) => b.bestXG - a.bestXG)
+                   .slice(0, topN);
+    }
+
     const makePrompt = (batch) => {
       const today = now.toLocaleDateString("en-GB", {weekday:"long",day:"numeric",month:"long",year:"numeric"});
-      const end14str = end14.toLocaleDateString("en-GB", {weekday:"short",day:"numeric",month:"long",year:"numeric"});
+      const lgName = batch[0]?.name || "";
 
       const dataSummary = batch.map(lg => {
-        const fxLines = lg.fixtures.slice(0, 5).map((f, i) => {
-          const td = lg.trendMap?.[`${f.home}|${f.away}`];
-          const trendStr = td
-            ? ` [Home form:${td.home?.form||"?"} avg scored:${td.home?.avg_goals_scored?.toFixed(1)||"?"} | Away form:${td.away?.form||"?"} avg scored:${td.away?.avg_goals_scored?.toFixed(1)||"?"}]`
-            : "";
+        const topFixtures = rankFixtures(lg, 5);
 
-          // Fuzzy-match fixture names against API-Sports odds map keys
+        const fxLines = topFixtures.map((f, i) => {
           const oddsKey = Object.keys(lg.oddsMap||{}).find(k => {
-            const [kHome, kAway] = k.split("|");
-            return teamsMatch(kHome, f.home) && teamsMatch(kAway, f.away);
+            const [kH, kA] = k.split("|");
+            return teamsMatch(kH, f.home) && teamsMatch(kA, f.away);
           });
           const odds = (oddsKey && lg.oddsMap[oddsKey]) || {};
           const oddsStr = odds.home
-            ? ` [Odds: H:${odds.home} D:${odds.draw} A:${odds.away}${odds.btts ? " BTTS:"+odds.btts : ""}${odds.over05 ? " O0.5:"+odds.over05 : ""}${odds.over15 ? " O1.5:"+odds.over15 : ""}${odds.homeToScore ? " "+f.home+"ToScore:"+odds.homeToScore : ""}${odds.awayToScore ? " "+f.away+"ToScore:"+odds.awayToScore : ""}]`
-            : " [Odds: NOT AVAILABLE for this fixture]";
+            ? ` [Odds: H:${odds.home} D:${odds.draw} A:${odds.away}${odds.btts?" BTTS:"+odds.btts:""}${odds.over05?" O0.5:"+odds.over05:""}${odds.over15?" O1.5:"+odds.over15:""}${odds.homeToScore?" "+f.home+"ToScore:"+odds.homeToScore:""}${odds.awayToScore?" "+f.away+"ToScore:"+odds.awayToScore:""}]`
+            : " [Odds: NOT AVAILABLE]";
 
+          const hR = (lg.recentResults?.[f.home]||[]).slice(-5).reverse();
+          const aR = (lg.recentResults?.[f.away]||[]).slice(-5).reverse();
+          const fmtR = r => r.length ? r.map(x=>`${x.r} ${x.s} vs ${x.opp}`).join(", ") : "no data";
 
+          const xgStr = ` [REAL DATA — USE EXACTLY: ${f.home} xG=${f.hXG?.toFixed(2)||"?"} avgScored=${f.hScored?.toFixed(2)||"?"} | ${f.away} xG=${f.aXG?.toFixed(2)||"?"} avgScored=${f.aScored?.toFixed(2)||"?"} | PICK: ${f.pickTeam} to Score xG=${f.pickXG} confidence=${f.conf}]`;
 
-          // Real last 5 results for each team
-          const homeResults = (lg.recentResults?.[f.home] || []).slice(-5).reverse();
-          const awayResults = (lg.recentResults?.[f.away] || []).slice(-5).reverse();
-          const fmtResults = results => results.length
-            ? results.map(r => `${r.r} ${r.s} vs ${r.opp}`).join(", ")
-            : "no recent data";
-          const formStr = `
-   ${f.home} last 5: ${fmtResults(homeResults)}
-   ${f.away} last 5: ${fmtResults(awayResults)}`;
-
-          return `${i+1}. ${f.home} vs ${f.away} — ${f.date} ${f.time}${trendStr}${oddsStr}${formStr}`;
+          return `${i+1}. ${f.home} vs ${f.away} — ${f.date} ${f.time}${oddsStr}${xgStr}
+   ${f.home} last 5: ${fmtR(hR)}
+   ${f.away} last 5: ${fmtR(aR)}`;
         }).join("\n");
 
-        const tableLines = lg.standings.slice(0, 6).map(t =>
-          `${t.pos}. ${t.team} (${t.pts}pts GD:${t.gd})`
-        ).join("\n");
-        const botLines = lg.standings.slice(-3).map(t =>
-          `${t.pos}. ${t.team} (${t.pts}pts - relegation)`
-        ).join("\n");
+        const tableLines = lg.standings.slice(0,6).map(t=>`${t.pos}. ${t.team} (${t.pts}pts GD:${t.gd})`).join("\n");
+        const botLines = lg.standings.slice(-3).map(t=>`${t.pos}. ${t.team} (${t.pts}pts - relegation)`).join("\n");
 
-        return `LEAGUE: ${lg.name} ${lg.flag}\nFIXTURES:\n${fxLines||"none"}\nTOP 6:\n${tableLines||"none"}\nBOTTOM 3:\n${botLines||"none"}`;
+        return `LEAGUE: ${lg.name}\nFIXTURES (ranked best to worst by scoring likelihood):\n${fxLines||"none"}\nTOP 6:\n${tableLines||"none"}\nBOTTOM 3:\n${botLines||"none"}`;
       }).join("\n\n---\n\n");
 
-      // Use the flag from the league config, not from Claude
-      const lgName = batch[0]?.name || "";
-
-      return `Today is ${today}. You are an expert football betting analyst with deep knowledge of European football.
+      return `Today is ${today}. You are an expert football betting analyst.
 
 ${dataSummary}
 
-TASK: Select the 5 BEST fixtures for betting from the league above. Prioritise fixtures where:
-1. One team has clear scoring form (high avg goals scored, strong attack, weak opposition defence)
-2. Bookmaker odds are available — skip fixtures marked "NOT AVAILABLE"
-3. The pick team is likely to score based on league position, form, and matchup
+Fixtures are PRE-RANKED by real scoring data. Pick the top 3-5. The [REAL DATA] block contains server-calculated values you MUST use.
 
-Return ONLY this JSON (no markdown, no backticks, no explanation before or after):
-{"leagues":[{"league":"${lgName}","flag":"PLACEHOLDER","context":"one sentence summarising the league situation right now","picks":[{"home":"TeamA","away":"TeamB","date":"Sat 2 May","time":"15:00","primary":{"pick":"TeamA to Score","xg":1.9,"odds":"1.45","confidence":"High","reason":"3 sentences: reference the team's recent scoring form from the data above, their key attackers, and why the opponent's defence is vulnerable. Be specific about goals scored in last 5 games.","injuries":"Not available"},"builders":[{"name":"TeamA Win","odds":"1.75","confidence":"High","reason":"2 sentences on why this team wins based on league position and form"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"High","reason":"2 sentences on why goals are expected in this fixture"},{"name":"BTTS","odds":"1.80","confidence":"Medium","reason":"2 sentences on why both teams score"}],"combo":{"name":"Win + Goals","picks":["TeamA Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"2 sentences on why these combine well"},"form":[{"result":"W","score":"2-0","xg":2.1,"actual":2},{"result":"W","score":"1-0","xg":1.4,"actual":1},{"result":"D","score":"1-1","xg":1.2,"actual":1},{"result":"L","score":"0-2","xg":0.8,"actual":0},{"result":"W","score":"3-1","xg":2.3,"actual":3}],"tags":["strong attack","home form"]}]}]}
+Return ONLY this JSON (no markdown, no backticks):
+{"leagues":[{"league":"${lgName}","flag":"PLACEHOLDER","context":"one sentence on league situation","picks":[{"home":"TeamA","away":"TeamB","date":"Sat 2 May","time":"15:00","primary":{"pick":"TeamA to Score","xg":1.42,"odds":"1.45","confidence":"High","reason":"3 sentences referencing the REAL last 5 results and the REAL xG figures. Be specific about actual scores from last 5."},"builders":[{"name":"TeamA Win","odds":"1.75","confidence":"High","reason":"1-2 sentences"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"Medium","reason":"1-2 sentences"},{"name":"BTTS","odds":"1.80","confidence":"Medium","reason":"1-2 sentences"}],"combo":{"name":"Win + Goals","picks":["TeamA Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"1-2 sentences"},"form":[{"result":"W","score":"2-0","xg":1.8,"actual":2},{"result":"L","score":"0-1","xg":0.9,"actual":0},{"result":"W","score":"1-0","xg":1.2,"actual":1},{"result":"D","score":"1-1","xg":1.1,"actual":1},{"result":"W","score":"2-1","xg":1.6,"actual":2}],"tags":["tag1","tag2"]}]}]}
 
-STRICT RULES:
-- Pick the 5 best fixtures based on form, league position and scoring likelihood — even if odds show "NOT AVAILABLE"
-- If odds ARE available use them; if not, write "N/A" for odds fields
-- league: always "${lgName}" — never change this
-- flag: always "PLACEHOLDER" — never change this  
-- primary.pick: always "[Team] to Score" e.g. "Arsenal to Score"
-- primary.odds: use the real HomeToScore or AwayToScore odd from the data. Write "N/A" only if genuinely absent
-- primary.xg: estimate based on avg goals scored from form data
-- confidence: "High" only if avg goals scored > 1.5 and strong form. Otherwise "Medium"
-- builders: use real H/D/A/BTTS/O0.5/O1.5 odds. Never suggest Over 2.5. Never put "to score" in builders
-- builders MAY include Over 0.5 Goals and/or Over 1.5 Goals  
-- combo.odds: always write "CALCULATE"
-- form: use EXACTLY the real results provided above in "[Team] last 5" — copy them directly into the form array. NEVER invent scores or results.
-- reason: base ALL analysis on the real results shown above. NEVER use training knowledge for recent scores, form or player transfers — only use what is in the data above.
-- Raw JSON only — absolutely no text before or after the JSON object`;
+CRITICAL RULES — NEVER VIOLATE:
+- primary.xg: copy EXACTLY from [REAL DATA] xG value for the PICK team — never invent or round differently
+- primary.pick: use EXACTLY the team named in [REAL DATA] PICK field
+- confidence: use EXACTLY the confidence from [REAL DATA]
+- form: copy results EXACTLY from "[Team] last 5" lines above — real scores only, never invent
+- reason: quote specific scores from last 5 and the real xG number explicitly
+- builders Over 1.5: only include if combined xG of both teams > 1.8
+- league: "${lgName}" — flag: "PLACEHOLDER" — combo.odds: "CALCULATE"
+- Raw JSON only, nothing before or after`;
     };
 
     // All 8 leagues in parallel — prompt is small enough (~500 tokens each) to fit well within rate limits
