@@ -256,8 +256,8 @@ export default async function handler(req, res) {
       const upcomingMatches = (fixturesData.matches || []).filter(m => !finished.includes(m.status));
 
       const fixtures = upcomingMatches.map(m => ({
-        home: m.homeTeam?.shortName || m.homeTeam?.name || "TBC",
-        away: m.awayTeam?.shortName || m.awayTeam?.name || "TBC",
+        home: m.homeTeam?.name || m.homeTeam?.shortName || "TBC",
+        away: m.awayTeam?.name || m.awayTeam?.shortName || "TBC",
         date: new Date(m.utcDate).toLocaleDateString("en-GB", {weekday:"short",day:"numeric",month:"short"}),
         time: new Date(m.utcDate).toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit"}),
         utc: m.utcDate,
@@ -278,8 +278,8 @@ export default async function handler(req, res) {
         const fmtDate = d => d.toISOString().split("T")[0];
         const recentData = await fdFetch(`/competitions/${lg.id}/matches?status=FINISHED&dateFrom=${fmtDate(past)}&dateTo=${fmtDate(now)}&limit=100`).catch(() => ({}));
         (recentData.matches || []).forEach(m => {
-          const home = m.homeTeam?.shortName || m.homeTeam?.name || "";
-          const away = m.awayTeam?.shortName || m.awayTeam?.name || "";
+          const home = m.homeTeam?.name || m.homeTeam?.shortName || "";
+          const away = m.awayTeam?.name || m.awayTeam?.shortName || "";
           const hg = m.score?.fullTime?.home ?? m.score?.fullTime?.homeTeam;
           const ag = m.score?.fullTime?.away ?? m.score?.fullTime?.awayTeam;
           if (hg === null || hg === undefined || ag === null || ag === undefined) return;
@@ -300,30 +300,48 @@ export default async function handler(req, res) {
 
     // ── Server-side fixture ranking with real xG ────────────────────────────
     function rankFixtures(lg, topN) {
-      const calcAvg = (results, last, field) => {
+      // Weighted trimmed mean: drop highest outlier, weight recent games more
+      const calcXG = (results, last, field) => {
         const games = results.slice(-last);
         if (!games.length) return null;
-        const total = games.reduce((s, g) => {
+        const vals = games.map(g => {
           const p = (g.s||"0-0").split("-");
-          return s + (parseInt(field==="scored"?p[0]:p[1])||0);
-        }, 0);
-        return total / games.length;
+          return parseInt(field==="scored"?p[0]:p[1])||0;
+        });
+        // Drop the single highest value to reduce outlier inflation
+        if (vals.length >= 4) {
+          const maxVal = Math.max(...vals);
+          const idx = vals.lastIndexOf(maxVal);
+          vals.splice(idx, 1);
+        }
+        // Apply recency weighting: most recent game = weight 2, oldest = weight 1
+        let weightedSum = 0, totalWeight = 0;
+        vals.forEach((v, i) => {
+          const weight = 1 + (i / vals.length); // newer = higher index = higher weight
+          weightedSum += v * weight;
+          totalWeight += weight;
+        });
+        return totalWeight > 0 ? weightedSum / totalWeight : null;
       };
 
       const ranked = lg.fixtures.map(f => {
         const hr = lg.recentResults?.[f.home] || [];
         const ar = lg.recentResults?.[f.away] || [];
-        const hScored = calcAvg(hr, 8, "scored");
-        const aScored = calcAvg(ar, 8, "scored");
-        const hConc   = calcAvg(hr, 8, "conc");
-        const aConc   = calcAvg(ar, 8, "conc");
-        // xG = attacker avg scored (60%) + opponent avg conceded (40%)
-        const hXG = hScored !== null ? ((hScored*0.6) + ((aConc||1.2)*0.4)) : null;
-        const aXG = aScored !== null ? ((aScored*0.6) + ((hConc||1.2)*0.4)) : null;
+        const hScored = calcXG(hr, 8, "scored");
+        const aScored = calcXG(ar, 8, "scored");
+        const hConc   = calcXG(hr, 8, "conc");
+        const aConc   = calcXG(ar, 8, "conc");
+        // xG = attacker weighted avg (60%) + opponent avg conceded (40%)
+        // Hard cap at 2.8 — no fixture should ever show above this
+        const hXG = hScored !== null
+          ? Math.min(((hScored*0.6) + ((aConc||1.1)*0.4)), 2.8) : null;
+        const aXG = aScored !== null
+          ? Math.min(((aScored*0.6) + ((hConc||1.1)*0.4)), 2.8) : null;
         const bestXG = Math.max(hXG||0, aXG||0);
         const pickTeam = (hXG||0) >= (aXG||0) ? f.home : f.away;
         const pickXG   = pickTeam === f.home ? hXG : aXG;
-        const conf = bestXG >= 1.5 ? "High" : bestXG >= 1.0 ? "Medium" : "Low";
+        // Confidence thresholds as requested
+        const conf = bestXG >= 2.5 ? "High" : bestXG >= 2.0 ? "Medium" : bestXG >= 1.5 ? "Low" : "Very Low";
         return { ...f, hXG, aXG, hScored, aScored, hConc, aConc, bestXG, pickTeam, pickXG: pickXG?.toFixed(2), conf };
       });
 
@@ -379,7 +397,7 @@ CRITICAL RULES — NEVER VIOLATE:
 - home/away team names: copy EXACTLY from the fixture list above — never substitute with different teams or invent fixtures
 - primary.xg: copy EXACTLY from [REAL DATA] xG value for the PICK team — never invent or round differently
 - primary.pick: use EXACTLY the team named in [REAL DATA] PICK field
-- confidence: use EXACTLY the confidence from [REAL DATA]
+- confidence: use EXACTLY the confidence from [REAL DATA] (High=xG≥2.5, Medium=xG≥2.0, Low=xG≥1.5, Very Low=below)
 - form: copy results EXACTLY from "[Team] last 5" lines above — real scores only, never invent
 - reason: quote specific scores from last 5 and the real xG number explicitly
 - builders Over 1.5: only include if combined xG of both teams > 1.8
