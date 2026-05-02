@@ -345,10 +345,14 @@ export default async function handler(req, res) {
         const hConc   = calcAvg(hr, 8, "conc",   "H");
         const aConc   = calcAvg(ar, 8, "conc",   "A");
 
-        // xG for each team: 60% own scoring rate + 40% opponent concede rate
-        // This gives meaningful differentiation between fixtures
-        const hXG = Math.min(hScored * 0.6 + aConc * 0.4, 2.5);
-        const aXG = Math.min(aScored * 0.6 + hConc * 0.4, 2.5);
+        // xG: 60% own scoring rate + 40% opponent concede rate
+        // Apply home advantage: away teams score ~15% less on average
+        const HOME_BOOST = 1.08;  // home teams score slightly more
+        const AWAY_DISC  = 0.88;  // away teams score ~12% less
+        const hXGraw = hScored * 0.6 + aConc * 0.4;
+        const aXGraw = aScored * 0.6 + hConc * 0.4;
+        const hXG = Math.min(hXGraw * HOME_BOOST, 2.5);
+        const aXG = Math.min(aXGraw * AWAY_DISC,  2.5);
 
         const bestXG = Math.max(hXG, aXG);
         const pickTeam = hXG >= aXG ? f.home : f.away;
@@ -382,10 +386,17 @@ export default async function handler(req, res) {
           return { result: r.r, score: r.s, xg: parseFloat(f.pickXG)||1.35, actual: parseInt(parts[0])||0 };
         });
         while (formArr.length < 5 && formArr.length > 0) formArr.push({...formArr[formArr.length-1]});
+        const isHomePick = f.pickTeam === f.home;
+        const combinedXG = (f.hXG||1.35) + (f.aXG||1.35);
+        // Builder logic: strong home fav gets Win, otherwise Double Chance
+        // Goals: Over 1.5 if combined xG > 2.6, else Over 0.5
+        const builderWin = isHomePick && f.hXG >= 2.0 ? "Win" : "Double Chance";
+        const builderGoals = combinedXG > 2.6 ? "Over 1.5 Goals" : "Over 0.5 Goals";
         return { home: f.home, away: f.away, date: f.date, time: f.time, utc: f.utc,
           pick: f.pickTeam, xg: parseFloat(f.pickXG)||1.35, hXG: f.hXG, aXG: f.aXG,
+          isHomePick, combinedXG, builderWin, builderGoals,
           confidence: f.conf, odds, form: formArr,
-          tags: [f.conf.toLowerCase(), f.pickTeam===f.home?"home pick":"away pick"] };
+          tags: [f.conf.toLowerCase(), isHomePick?"home pick":"away pick"] };
       });
     };
 
@@ -401,7 +412,7 @@ export default async function handler(req, res) {
         const oddsStr = p.odds.home
           ? `H:${p.odds.home} D:${p.odds.draw} A:${p.odds.away}${p.odds.homeToScore?" Scr:"+p.odds.homeToScore:""}`
           : "N/A";
-        return `${i+1}. ${p.home} vs ${p.away} ${p.date} ${p.time} | PICK:${p.pick} xG:${p.xg.toFixed(2)} ${p.confidence} | ${oddsStr} | form:${p.form.map(f=>f.result+f.score).join(",")}`;
+        return `${i+1}. ${p.home} vs ${p.away} ${p.date} ${p.time} | PICK:${p.pick} xG:${p.xg.toFixed(2)} ${p.confidence} | builders:[${p.pick} ${p.builderWin}, ${p.pick} ${p.builderGoals}, BTTS] | ${oddsStr} | form:${p.form.map(f=>f.result+f.score).join(",")}`;
       }).join("\n");
 
       const ctx = `${lg.standings[0]?.team||""}(${lg.standings[0]?.pts||0}pts) leads. Bottom: ${lg.standings.slice(-1)[0]?.team||""}`;
@@ -487,9 +498,9 @@ Copy home/away/date/time/pick/xg/confidence EXACTLY. Write ALL ${prePicks.length
               reason: `${sp.pick} have an xG of ${sp.xg.toFixed(2)} for this fixture based on recent form.`
             },
             builders: [
-              {name:`${sp.pick} Win`, odds: sp.pick===sp.home?(sp.odds.home||"N/A"):(sp.odds.away||"N/A"), confidence:"Medium", reason:"Based on current form and xG advantage."},
-              {name:"Over 1.5 Goals", odds: sp.odds.over15||"N/A", confidence:"Medium", reason:"Combined xG suggests goals likely."},
-              {name:"BTTS", odds: sp.odds.btts||"N/A", confidence:"Medium", reason:"Both teams have scored consistently."}
+              {name:`${sp.pick} ${sp.builderWin||"Double Chance"}`, odds:"N/A", confidence:"Medium", reason:""},
+              {name:`${sp.pick} ${sp.builderGoals||"Over 0.5 Goals"}`, odds:"N/A", confidence:"Medium", reason:""},
+              {name:"BTTS", odds:"N/A", confidence:"Medium", reason:""}
             ],
             combo: {name:"Pick + Goals", picks:[`${sp.pick} Win`,"Over 1.5 Goals"], odds:"CALCULATE", reason:"Form and xG support a goals-heavy fixture."},
             form: sp.form,
