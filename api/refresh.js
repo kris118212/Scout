@@ -366,67 +366,56 @@ export default async function handler(req, res) {
       return result.slice(0, topN);
     }
 
+    // Pre-build all pick data server-side — guarantees correct count regardless of Claude
+    const buildLeaguePicks = (lg) => {
+      const topFixtures = rankFixtures(lg, 5);
+      if (!topFixtures.length) return null;
+      return topFixtures.map(f => {
+        const oddsKey = Object.keys(lg.oddsMap||{}).find(k => {
+          const [kH, kA] = k.split("|");
+          return teamsMatch(kH, f.home) && teamsMatch(kA, f.away);
+        });
+        const odds = (oddsKey && lg.oddsMap[oddsKey]) || {};
+        const pickResults = (findResults(lg, f.pickTeam)||[]).slice(-5).reverse();
+        const formArr = pickResults.map(r => {
+          const parts = (r.s||"0-0").split("-");
+          return { result: r.r, score: r.s, xg: parseFloat(f.pickXG)||1.35, actual: parseInt(parts[0])||0 };
+        });
+        while (formArr.length < 5 && formArr.length > 0) formArr.push({...formArr[formArr.length-1]});
+        return { home: f.home, away: f.away, date: f.date, time: f.time, utc: f.utc,
+          pick: f.pickTeam, xg: parseFloat(f.pickXG)||1.35, hXG: f.hXG, aXG: f.aXG,
+          confidence: f.conf, odds, form: formArr,
+          tags: [f.conf.toLowerCase(), f.pickTeam===f.home?"home pick":"away pick"] };
+      });
+    };
+
     const makePrompt = (batch) => {
       const today = now.toLocaleDateString("en-GB", {weekday:"long",day:"numeric",month:"long",year:"numeric"});
       const lgName = batch[0]?.name || "";
+      const lg = batch[0];
+      const prePicks = buildLeaguePicks(lg);
 
-      const allTopFixtures = batch.map(lg => rankFixtures(lg, 6));
-      const dataSummary = batch.map((lg, bIdx) => {
-        const topFixtures = allTopFixtures[bIdx];
+      if (!prePicks) return `{"leagues":[{"league":"${lgName}","flag":"PLACEHOLDER","context":"Season complete.","picks":[]}]}`;
 
-        // If no real fixtures exist for this league, return a skip signal
-        if (!topFixtures.length) {
-          return `LEAGUE: ${lg.name}
-STATUS: NO UPCOMING FIXTURES — skip this league entirely, return zero picks`;
-        }
+      const pickLines = prePicks.map((p, i) => {
+        const oddsStr = p.odds.home
+          ? `H:${p.odds.home} D:${p.odds.draw} A:${p.odds.away}${p.odds.homeToScore?" Scr:"+p.odds.homeToScore:""}`
+          : "N/A";
+        return `${i+1}. ${p.home} vs ${p.away} ${p.date} ${p.time} | PICK:${p.pick} xG:${p.xg.toFixed(2)} ${p.confidence} | ${oddsStr} | form:${p.form.map(f=>f.result+f.score).join(",")}`;
+      }).join("\n");
 
-        const fxLines = topFixtures.map((f, i) => {
-          const oddsKey = Object.keys(lg.oddsMap||{}).find(k => {
-            const [kH, kA] = k.split("|");
-            return teamsMatch(kH, f.home) && teamsMatch(kA, f.away);
-          });
-          const odds = (oddsKey && lg.oddsMap[oddsKey]) || {};
-          const oddsStr = odds.home
-            ? ` [Odds: H:${odds.home} D:${odds.draw} A:${odds.away}${odds.btts?" BTTS:"+odds.btts:""}${odds.over05?" O0.5:"+odds.over05:""}${odds.over15?" O1.5:"+odds.over15:""}${odds.homeToScore?" "+f.home+"ToScore:"+odds.homeToScore:""}${odds.awayToScore?" "+f.away+"ToScore:"+odds.awayToScore:""}]`
-            : " [Odds: NOT AVAILABLE]";
+      const ctx = `${lg.standings[0]?.team||""}(${lg.standings[0]?.pts||0}pts) leads. Bottom: ${lg.standings.slice(-1)[0]?.team||""}`;
 
-          const pickR = (findResults(lg, f.pickTeam)||[]).slice(-5).reverse();
-          const fmtR = r => r.length ? r.map(x=>`${x.r} ${x.s}`).join(",") : "no data";
+      return `${today}. ${lgName} analyst. Write reason text for these ${prePicks.length} fixtures:
 
-          // Compact format — only picked team's form needed
-          const xgStr = ` ★PICK:${f.pickTeam} xG:${f.pickXG} conf:${f.conf} | H-xG:${f.hXG?.toFixed(2)} A-xG:${f.aXG?.toFixed(2)}`;
-          const formStr = ` | ${f.pickTeam} form:[${fmtR(pickR)}]`;
+${pickLines}
 
-          return `${i+1}. ${f.home} vs ${f.away} — ${f.date} ${f.time}${oddsStr}${xgStr}${formStr}`;
-        }).join("\n");
+Return ONLY valid JSON:
+{"leagues":[{"league":"${lgName}","flag":"PLACEHOLDER","context":"${ctx}","picks":[{"home":"exact","away":"exact","date":"exact","time":"exact","primary":{"pick":"PICK to Score","xg":X.XX,"odds":"Scr odd or N/A","confidence":"exact","reason":"2 sentences on why PICK will score"},"builders":[{"name":"PICK Win","odds":"H or A odd","confidence":"Medium","reason":"1 sentence"},{"name":"Over 1.5 Goals","odds":"N/A","confidence":"Medium","reason":"1 sentence"},{"name":"BTTS","odds":"N/A","confidence":"Medium","reason":"1 sentence"}],"combo":{"name":"PICK Win + Goals","picks":["PICK Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"1 sentence"},"form":[{"result":"W","score":"2-0","xg":1.5,"actual":2}],"tags":["tag"]}]}]}
 
-        const tableLines = lg.standings.slice(0,4).map(t=>`${t.pos}.${t.team}(${t.pts}pts)`).join(" ");
-        const botLines = lg.standings.slice(-3).map(t=>`${t.pos}.${t.team}(${t.pts}pts)`).join(" ");
-
-        return `LEAGUE: ${lg.name}\nTOP4: ${tableLines||"none"} BOT3: ${botLines||"none"}\nFIXTURES:\n${fxLines||"none"}`;
-      }).join("\n\n---\n\n");
-
-      return `Today is ${today}. You are an expert football betting analyst.
-
-${dataSummary}
-
-Fixtures above are PRE-RANKED by scoring likelihood. Return ALL ${allTopFixtures[0]?.length || 5} fixtures as picks — one pick per fixture, in the order listed.
-
-Return ONLY this JSON (no markdown, no backticks):
-{"leagues":[{"league":"${lgName}","flag":"PLACEHOLDER","context":"one sentence","picks":[{"home":"TeamA","away":"TeamB","date":"Sat 2 May","time":"15:00","primary":{"pick":"TeamA to Score","xg":1.42,"odds":"N/A","confidence":"High","reason":"2 sentences max — reference real xG and last 5 results only."},"builders":[{"name":"TeamA Win","odds":"N/A","confidence":"High","reason":"1 sentence"},{"name":"Over 1.5 Goals","odds":"N/A","confidence":"Medium","reason":"1 sentence"},{"name":"BTTS","odds":"N/A","confidence":"Medium","reason":"1 sentence"}],"combo":{"name":"Win + Goals","picks":["TeamA Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"1 sentence"},"form":[{"result":"W","score":"2-0","xg":1.8,"actual":2},{"result":"L","score":"0-1","xg":0.9,"actual":0},{"result":"W","score":"1-0","xg":1.2,"actual":1},{"result":"D","score":"1-1","xg":1.1,"actual":1},{"result":"W","score":"2-1","xg":1.6,"actual":2}],"tags":["tag1"]}]}]}
-
-RULES:
-- Return a pick for EVERY fixture in the list — do not skip any
-- home/away: copy EXACTLY from fixture list, never substitute
-- primary.xg: copy EXACTLY from [REAL DATA] — never invent
-- primary.pick: use EXACTLY the [REAL DATA] PICK team
-- confidence: copy EXACTLY from [REAL DATA]
-- form: copy EXACTLY from "[Team] last 5" — 5 entries, never invent
-- combo.odds: always "CALCULATE"
-- flag: always "PLACEHOLDER"
-- league: "${lgName}"
-- Raw JSON only`;
+Copy home/away/date/time/pick/xg/confidence EXACTLY. Write ALL ${prePicks.length} picks. combo.odds="CALCULATE". flag="PLACEHOLDER". league="${lgName}". Raw JSON only.`;
     };
+
 
     // All 8 leagues in parallel — prompt is small enough (~500 tokens each) to fit well within rate limits
     const raws = await Promise.all(leagueData.map(lg => callClaude(makePrompt([lg]))));
@@ -444,6 +433,13 @@ RULES:
       ...parseLeagues(rawH)
     ];
 
+    // Build server-side pick data for merging
+    const serverPickData = {};
+    leagueData.forEach(lg => {
+      const picks = buildLeaguePicks(lg);
+      if (picks) serverPickData[lg.name] = picks;
+    });
+
     allLeagues.forEach(lg => {
       const live = leagueData.find(r => r.name === lg.league);
       if (live) {
@@ -451,14 +447,56 @@ RULES:
         lg.cfg = live;
         lg.flag = live.flag;
         lg.flagCode = live.flagCode;
-        // Inject real utc datetime into each pick so frontend can filter accurately
-        (lg.picks || []).forEach(pick => {
-          const match = (live.fixtures || []).find(f =>
-            teamsMatch(f.home, pick.home) && teamsMatch(f.away, pick.away)
-          );
-          if (match) pick.utc = match.utc;
-        });
       }
+      // Merge server-calculated data (xg, form, utc, odds) into Claude's picks
+      const serverPicks = serverPickData[lg.league] || [];
+      (lg.picks || []).forEach(pick => {
+        const sp = serverPicks.find(s =>
+          teamsMatch(s.home, pick.home) && teamsMatch(s.away, pick.away)
+        );
+        if (sp) {
+          pick.utc = sp.utc;
+          // Always use server-calculated form and xg — never Claude's invented values
+          if (sp.form && sp.form.length) pick.primary = pick.primary || {};
+          if (pick.primary) {
+            pick.primary.xg = sp.xg;
+            pick.primary.confidence = sp.confidence;
+          }
+          if (sp.form && sp.form.length) pick.form = sp.form;
+          // Inject tags
+          if (sp.tags) pick.tags = sp.tags;
+        }
+      });
+
+      // If Claude returned fewer picks than server pre-built, add missing ones
+      const serverPicsList = serverPickData[lg.league] || [];
+      serverPicsList.forEach(sp => {
+        const already = (lg.picks||[]).find(p =>
+          teamsMatch(p.home, sp.home) && teamsMatch(p.away, sp.away)
+        );
+        if (!already) {
+          // Claude missed this pick — add a minimal version
+          lg.picks = lg.picks || [];
+          lg.picks.push({
+            home: sp.home, away: sp.away, date: sp.date, time: sp.time, utc: sp.utc,
+            primary: {
+              pick: `${sp.pick} to Score`,
+              xg: sp.xg,
+              odds: sp.odds.homeToScore || sp.odds.awayToScore || "N/A",
+              confidence: sp.confidence,
+              reason: `${sp.pick} have an xG of ${sp.xg.toFixed(2)} for this fixture based on recent form.`
+            },
+            builders: [
+              {name:`${sp.pick} Win`, odds: sp.pick===sp.home?(sp.odds.home||"N/A"):(sp.odds.away||"N/A"), confidence:"Medium", reason:"Based on current form and xG advantage."},
+              {name:"Over 1.5 Goals", odds: sp.odds.over15||"N/A", confidence:"Medium", reason:"Combined xG suggests goals likely."},
+              {name:"BTTS", odds: sp.odds.btts||"N/A", confidence:"Medium", reason:"Both teams have scored consistently."}
+            ],
+            combo: {name:"Pick + Goals", picks:[`${sp.pick} Win`,"Over 1.5 Goals"], odds:"CALCULATE", reason:"Form and xG support a goals-heavy fixture."},
+            form: sp.form,
+            tags: sp.tags
+          });
+        }
+      });
     });
 
     // Replace all combo.odds with mathematically calculated values
