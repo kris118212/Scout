@@ -355,7 +355,7 @@ export default async function handler(req, res) {
         const pickXG = (pickTeam === f.home ? hXG : aXG).toFixed(2);
 
         // Confidence: spread across full realistic range
-        const conf = bestXG >= 2.0 ? "High" : bestXG >= 1.6 ? "Medium" : bestXG >= 1.2 ? "Low" : "Very Low";
+        const conf = bestXG >= 2.25 ? "High" : bestXG >= 1.8 ? "Medium" : "Low";
         return { ...f, hXG, aXG, hScored, aScored, hConc, aConc, bestXG, pickTeam, pickXG, conf };
       });
 
@@ -514,20 +514,7 @@ Copy home/away/date/time/pick/xg/confidence EXACTLY. Write ALL ${prePicks.length
     await kvSet("scout_data", JSON.stringify(payload));
     await kvSet("scout_updated", now.toISOString());
 
-    res.status(200).json({ 
-      ok: true, 
-      leagues: allLeagues.length, 
-      updatedAt: now.toISOString(),
-      debug: { 
-        leagues: leagueData.map(lg => ({ 
-          name: lg.name, 
-          totalFixtures: lg.fixtures?.length||0,
-          rankedFixtures: buildLeaguePicks(lg)?.length||0,
-          claudePicks: allLeagues.find(l=>l.league===lg.name)?.picks?.length||0,
-          finalPicks: allLeagues.find(l=>l.league===lg.name)?.picks?.length||0
-        }))
-      }
-    });
+    res.status(200).json({ ok: true, leagues: allLeagues.length, updatedAt: now.toISOString() });
   } catch(err) {
     console.error(err);
     res.status(500).json({ error: err.message });
