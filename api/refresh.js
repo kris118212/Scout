@@ -390,13 +390,12 @@ STATUS: NO UPCOMING FIXTURES — skip this league entirely, return zero picks`;
             ? ` [Odds: H:${odds.home} D:${odds.draw} A:${odds.away}${odds.btts?" BTTS:"+odds.btts:""}${odds.over05?" O0.5:"+odds.over05:""}${odds.over15?" O1.5:"+odds.over15:""}${odds.homeToScore?" "+f.home+"ToScore:"+odds.homeToScore:""}${odds.awayToScore?" "+f.away+"ToScore:"+odds.awayToScore:""}]`
             : " [Odds: NOT AVAILABLE]";
 
-          const hR = (findResults(lg, f.home)||[]).slice(-5).reverse();
-          const aR = (findResults(lg, f.away)||[]).slice(-5).reverse();
+          const pickR = (findResults(lg, f.pickTeam)||[]).slice(-5).reverse();
           const fmtR = r => r.length ? r.map(x=>`${x.r} ${x.s}`).join(",") : "no data";
 
-          // Compact format to keep prompt small — critical data only
+          // Compact format — only picked team's form needed
           const xgStr = ` ★PICK:${f.pickTeam} xG:${f.pickXG} conf:${f.conf} | H-xG:${f.hXG?.toFixed(2)} A-xG:${f.aXG?.toFixed(2)}`;
-          const formStr = ` | ${f.home}:[${fmtR(hR)}] ${f.away}:[${fmtR(aR)}]`;
+          const formStr = ` | ${f.pickTeam} form:[${fmtR(pickR)}]`;
 
           return `${i+1}. ${f.home} vs ${f.away} — ${f.date} ${f.time}${oddsStr}${xgStr}${formStr}`;
         }).join("\n");
