@@ -392,19 +392,19 @@ STATUS: NO UPCOMING FIXTURES — skip this league entirely, return zero picks`;
 
           const hR = (findResults(lg, f.home)||[]).slice(-5).reverse();
           const aR = (findResults(lg, f.away)||[]).slice(-5).reverse();
-          const fmtR = r => r.length ? r.map(x=>`${x.r} ${x.s} vs ${x.opp}`).join(", ") : "no data";
+          const fmtR = r => r.length ? r.map(x=>`${x.r} ${x.s}`).join(",") : "no data";
 
-          const xgStr = ` [REAL DATA — USE EXACTLY: ${f.home} xG=${f.hXG?.toFixed(2)||"?"} avgScored=${f.hScored?.toFixed(2)||"?"} | ${f.away} xG=${f.aXG?.toFixed(2)||"?"} avgScored=${f.aScored?.toFixed(2)||"?"} | PICK: ${f.pickTeam} to Score xG=${f.pickXG} confidence=${f.conf}]`;
+          // Compact format to keep prompt small — critical data only
+          const xgStr = ` ★PICK:${f.pickTeam} xG:${f.pickXG} conf:${f.conf} | H-xG:${f.hXG?.toFixed(2)} A-xG:${f.aXG?.toFixed(2)}`;
+          const formStr = ` | ${f.home}:[${fmtR(hR)}] ${f.away}:[${fmtR(aR)}]`;
 
-          return `${i+1}. ${f.home} vs ${f.away} — ${f.date} ${f.time}${oddsStr}${xgStr}
-   ${f.home} last 5: ${fmtR(hR)}
-   ${f.away} last 5: ${fmtR(aR)}`;
+          return `${i+1}. ${f.home} vs ${f.away} — ${f.date} ${f.time}${oddsStr}${xgStr}${formStr}`;
         }).join("\n");
 
-        const tableLines = lg.standings.slice(0,6).map(t=>`${t.pos}. ${t.team} (${t.pts}pts GD:${t.gd})`).join("\n");
-        const botLines = lg.standings.slice(-3).map(t=>`${t.pos}. ${t.team} (${t.pts}pts - relegation)`).join("\n");
+        const tableLines = lg.standings.slice(0,4).map(t=>`${t.pos}.${t.team}(${t.pts}pts)`).join(" ");
+        const botLines = lg.standings.slice(-3).map(t=>`${t.pos}.${t.team}(${t.pts}pts)`).join(" ");
 
-        return `LEAGUE: ${lg.name}\nFIXTURES (ranked best to worst by scoring likelihood — use EXACTLY these fixture names, never substitute):\n${fxLines||"none"}\nTOP 6:\n${tableLines||"none"}\nBOTTOM 3:\n${botLines||"none"}`;
+        return `LEAGUE: ${lg.name}\nTOP4: ${tableLines||"none"} BOT3: ${botLines||"none"}\nFIXTURES:\n${fxLines||"none"}`;
       }).join("\n\n---\n\n");
 
       return `Today is ${today}. You are an expert football betting analyst.
