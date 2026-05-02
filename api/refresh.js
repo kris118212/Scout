@@ -370,8 +370,9 @@ export default async function handler(req, res) {
       const today = now.toLocaleDateString("en-GB", {weekday:"long",day:"numeric",month:"long",year:"numeric"});
       const lgName = batch[0]?.name || "";
 
-      const dataSummary = batch.map(lg => {
-        const topFixtures = rankFixtures(lg, 6);
+      const allTopFixtures = batch.map(lg => rankFixtures(lg, 6));
+      const dataSummary = batch.map((lg, bIdx) => {
+        const topFixtures = allTopFixtures[bIdx];
 
         // If no real fixtures exist for this league, return a skip signal
         if (!topFixtures.length) {
@@ -410,24 +411,22 @@ STATUS: NO UPCOMING FIXTURES — skip this league entirely, return zero picks`;
 
 ${dataSummary}
 
-Fixtures are PRE-RANKED by real scoring data. You MUST return exactly 5 picks (or all available if fewer than 5 fixtures listed). The [REAL DATA] block contains server-calculated values you MUST use.
-If a league shows "NO UPCOMING FIXTURES" — return zero picks (empty array []).
-NEVER invent fixtures. Only use fixtures from the numbered list above.
+Fixtures above are PRE-RANKED by scoring likelihood. Return ALL ${allTopFixtures[0]?.length || 5} fixtures as picks — one pick per fixture, in the order listed.
 
 Return ONLY this JSON (no markdown, no backticks):
-{"leagues":[{"league":"${lgName}","flag":"PLACEHOLDER","context":"one sentence on league situation","picks":[{"home":"TeamA","away":"TeamB","date":"Sat 2 May","time":"15:00","primary":{"pick":"TeamA to Score","xg":1.42,"odds":"1.45","confidence":"High","reason":"3 sentences referencing the REAL last 5 results and the REAL xG figures. Be specific about actual scores from last 5."},"builders":[{"name":"TeamA Win","odds":"1.75","confidence":"High","reason":"1-2 sentences"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"Medium","reason":"1-2 sentences"},{"name":"BTTS","odds":"1.80","confidence":"Medium","reason":"1-2 sentences"}],"combo":{"name":"Win + Goals","picks":["TeamA Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"1-2 sentences"},"form":[{"result":"W","score":"2-0","xg":1.8,"actual":2},{"result":"L","score":"0-1","xg":0.9,"actual":0},{"result":"W","score":"1-0","xg":1.2,"actual":1},{"result":"D","score":"1-1","xg":1.1,"actual":1},{"result":"W","score":"2-1","xg":1.6,"actual":2}],"tags":["tag1","tag2"]}]}]}
+{"leagues":[{"league":"${lgName}","flag":"PLACEHOLDER","context":"one sentence","picks":[{"home":"TeamA","away":"TeamB","date":"Sat 2 May","time":"15:00","primary":{"pick":"TeamA to Score","xg":1.42,"odds":"N/A","confidence":"High","reason":"2 sentences max — reference real xG and last 5 results only."},"builders":[{"name":"TeamA Win","odds":"N/A","confidence":"High","reason":"1 sentence"},{"name":"Over 1.5 Goals","odds":"N/A","confidence":"Medium","reason":"1 sentence"},{"name":"BTTS","odds":"N/A","confidence":"Medium","reason":"1 sentence"}],"combo":{"name":"Win + Goals","picks":["TeamA Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"1 sentence"},"form":[{"result":"W","score":"2-0","xg":1.8,"actual":2},{"result":"L","score":"0-1","xg":0.9,"actual":0},{"result":"W","score":"1-0","xg":1.2,"actual":1},{"result":"D","score":"1-1","xg":1.1,"actual":1},{"result":"W","score":"2-1","xg":1.6,"actual":2}],"tags":["tag1"]}]}]}
 
-CRITICAL RULES — NEVER VIOLATE:
-- home/away team names: copy EXACTLY from the numbered fixture list above — if you cannot find a fixture in the list do not include it
-- NEVER invent fixtures — if a league has "NO UPCOMING FIXTURES" return {"league":"...","flag":"PLACEHOLDER","context":"...","picks":[]}
-- primary.xg: copy EXACTLY from [REAL DATA] xG value for the PICK team — never invent or round differently
-- primary.pick: use EXACTLY the team named in [REAL DATA] PICK field
-- confidence: use EXACTLY the confidence from [REAL DATA] (High=xG≥2.0, Medium=xG≥1.6, Low=xG≥1.2, Very Low=below)
-- form: copy results EXACTLY from "[Team] last 5" lines above — always exactly 5 entries, real scores only. If fewer than 5 are provided, repeat the oldest result to pad to 5. Never invent scores.
-- reason: quote specific scores from last 5 and the real xG number explicitly
-- builders Over 1.5: only include if combined xG of both teams > 1.8
-- league: "${lgName}" — flag: "PLACEHOLDER" — combo.odds: "CALCULATE"
-- Raw JSON only, nothing before or after`;
+RULES:
+- Return a pick for EVERY fixture in the list — do not skip any
+- home/away: copy EXACTLY from fixture list, never substitute
+- primary.xg: copy EXACTLY from [REAL DATA] — never invent
+- primary.pick: use EXACTLY the [REAL DATA] PICK team
+- confidence: copy EXACTLY from [REAL DATA]
+- form: copy EXACTLY from "[Team] last 5" — 5 entries, never invent
+- combo.odds: always "CALCULATE"
+- flag: always "PLACEHOLDER"
+- league: "${lgName}"
+- Raw JSON only`;
     };
 
     // All 8 leagues in parallel — prompt is small enough (~500 tokens each) to fit well within rate limits
