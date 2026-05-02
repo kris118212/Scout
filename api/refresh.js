@@ -519,7 +519,13 @@ Copy home/away/date/time/pick/xg/confidence EXACTLY. Write ALL ${prePicks.length
       leagues: allLeagues.length, 
       updatedAt: now.toISOString(),
       debug: { 
-        rawLengths: raws.map((r,i) => ({ league: leagueData[i]?.name, len: r?.length||0, oddsCount: Object.keys(leagueData[i]?.oddsMap||{}).length, preview: r?.slice(0,150)||"EMPTY" }))
+        leagues: leagueData.map(lg => ({ 
+          name: lg.name, 
+          totalFixtures: lg.fixtures?.length||0,
+          rankedFixtures: buildLeaguePicks(lg)?.length||0,
+          claudePicks: allLeagues.find(l=>l.league===lg.name)?.picks?.length||0,
+          finalPicks: allLeagues.find(l=>l.league===lg.name)?.picks?.length||0
+        }))
       }
     });
   } catch(err) {
