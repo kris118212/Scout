@@ -300,45 +300,68 @@ export default async function handler(req, res) {
 
     // ── Server-side fixture ranking with real xG ────────────────────────────
     function rankFixtures(lg, topN) {
-      // Realistic xG model:
-      // 1. Cap each game at 2 goals max (a 5-0 is treated as 2-0 for xG purposes)
-      // 2. Blend 50% toward league average (1.35) — strong regression prevents inflation
-      // 3. Hard cap at 1.9 — realistic ceiling for expected goals in a single fixture
+      // xG model — balanced approach:
+      // - Use actual goals scored/conceded, capped at 4 per game (removes freakish outliers)
+      // - Light 25% regression toward league mean (enough to prevent extremes, not so much it flattens everything)
+      // - Separate home/away averages for more accuracy
+      // - Hard cap at 2.5 — genuinely elite attacking performances can show higher xG
       const LEAGUE_AVG = 1.35;
-      const calcXG = (results, last, field) => {
-        const games = results.slice(-last);
+      const REGRESSION = 0.25; // 25% pull toward league mean
+
+      const calcAvg = (results, last, field, venue) => {
+        let games = results.slice(-last);
+        // Filter by venue if enough data exists
+        const venueGames = games.filter(g => g.v === venue);
+        if (venueGames.length >= 3) games = venueGames;
         if (!games.length) return LEAGUE_AVG;
         const vals = games.map(g => {
           const p = (g.s||"0-0").split("-");
           const raw = parseInt(field==="scored"?p[0]:p[1])||0;
-          return Math.min(raw, 2); // cap each game contribution at 2
+          return Math.min(raw, 4); // cap at 4 — a 6-0 win counts as 4
         });
-        const mean = vals.reduce((s,v)=>s+v,0) / vals.length;
-        // 50% blend toward league average — strong regression to mean
-        return mean * 0.5 + LEAGUE_AVG * 0.5;
+        // Recency weighted: most recent = weight 2x, oldest = 1x
+        let wSum = 0, wTotal = 0;
+        vals.forEach((v, i) => {
+          const w = 1 + (i / vals.length);
+          wSum += v * w; wTotal += w;
+        });
+        const raw = wSum / wTotal;
+        // Light regression to mean
+        return raw * (1 - REGRESSION) + LEAGUE_AVG * REGRESSION;
+      };
+
+      // Fuzzy name match for recentResults lookup
+      const findResults = (name) => {
+        if (lg.recentResults?.[name]) return lg.recentResults[name];
+        const key = Object.keys(lg.recentResults||{}).find(k => teamsMatch(k, name));
+        return key ? lg.recentResults[key] : [];
       };
 
       const ranked = lg.fixtures.map(f => {
-        const hr = lg.recentResults?.[f.home] || [];
-        const ar = lg.recentResults?.[f.away] || [];
-        const hScored = calcXG(hr, 8, "scored");
-        const aScored = calcXG(ar, 8, "scored");
-        const hConc   = calcXG(hr, 8, "conc");
-        const aConc   = calcXG(ar, 8, "conc");
-        // xG = attacker scoring (65%) + opponent concede rate (35%), hard cap 1.9
-        const hXG = Math.min(hScored*0.65 + aConc*0.35, 1.9);
-        const aXG = Math.min(aScored*0.65 + hConc*0.35, 1.9);
+        const hr = findResults(f.home);
+        const ar = findResults(f.away);
+        const hScored = calcAvg(hr, 8, "scored", "H");
+        const aScored = calcAvg(ar, 8, "scored", "A");
+        const hConc   = calcAvg(hr, 8, "conc",   "H");
+        const aConc   = calcAvg(ar, 8, "conc",   "A");
+
+        // xG for each team: 60% own scoring rate + 40% opponent concede rate
+        // This gives meaningful differentiation between fixtures
+        const hXG = Math.min(hScored * 0.6 + aConc * 0.4, 2.5);
+        const aXG = Math.min(aScored * 0.6 + hConc * 0.4, 2.5);
+
         const bestXG = Math.max(hXG, aXG);
         const pickTeam = hXG >= aXG ? f.home : f.away;
-        const pickXG   = (pickTeam === f.home ? hXG : aXG).toFixed(2);
-        // Confidence thresholds calibrated to realistic range
-        const conf = bestXG >= 1.7 ? "High" : bestXG >= 1.5 ? "Medium" : bestXG >= 1.3 ? "Low" : "Very Low";
+        const pickXG = (pickTeam === f.home ? hXG : aXG).toFixed(2);
+
+        // Confidence: spread across full realistic range
+        const conf = bestXG >= 2.0 ? "High" : bestXG >= 1.6 ? "Medium" : bestXG >= 1.2 ? "Low" : "Very Low";
         return { ...f, hXG, aXG, hScored, aScored, hConc, aConc, bestXG, pickTeam, pickXG, conf };
       });
 
       const sorted = ranked.sort((a,b) => b.bestXG - a.bestXG);
-      // Always return at least min(3, available) fixtures even if xG is low
-      const qualified = sorted.filter(f => f.bestXG > 0.4);
+      const qualified = sorted.filter(f => f.bestXG > 0.5);
+      // Always return at least 3 if available
       const result = qualified.length >= 3 ? qualified : sorted;
       return result.slice(0, topN);
     }
@@ -399,8 +422,8 @@ CRITICAL RULES — NEVER VIOLATE:
 - NEVER invent fixtures — if a league has "NO UPCOMING FIXTURES" return {"league":"...","flag":"PLACEHOLDER","context":"...","picks":[]}
 - primary.xg: copy EXACTLY from [REAL DATA] xG value for the PICK team — never invent or round differently
 - primary.pick: use EXACTLY the team named in [REAL DATA] PICK field
-- confidence: use EXACTLY the confidence from [REAL DATA] (High=xG≥1.7, Medium=xG≥1.5, Low=xG≥1.3, Very Low=below)
-- form: copy results EXACTLY from "[Team] last 5" lines above — real scores only, never invent
+- confidence: use EXACTLY the confidence from [REAL DATA] (High=xG≥2.0, Medium=xG≥1.6, Low=xG≥1.2, Very Low=below)
+- form: copy results EXACTLY from "[Team] last 5" lines above — always exactly 5 entries, real scores only. If fewer than 5 are provided, repeat the oldest result to pad to 5. Never invent scores.
 - reason: quote specific scores from last 5 and the real xG number explicitly
 - builders Over 1.5: only include if combined xG of both teams > 1.8
 - league: "${lgName}" — flag: "PLACEHOLDER" — combo.odds: "CALCULATE"
