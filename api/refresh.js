@@ -453,6 +453,13 @@ CRITICAL RULES — NEVER VIOLATE:
         lg.cfg = live;
         lg.flag = live.flag;
         lg.flagCode = live.flagCode;
+        // Inject real utc datetime into each pick so frontend can filter accurately
+        (lg.picks || []).forEach(pick => {
+          const match = (live.fixtures || []).find(f =>
+            teamsMatch(f.home, pick.home) && teamsMatch(f.away, pick.away)
+          );
+          if (match) pick.utc = match.utc;
+        });
       }
     });
 
