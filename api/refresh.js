@@ -363,7 +363,7 @@ export default async function handler(req, res) {
         const tableLines = lg.standings.slice(0,6).map(t=>`${t.pos}. ${t.team} (${t.pts}pts GD:${t.gd})`).join("\n");
         const botLines = lg.standings.slice(-3).map(t=>`${t.pos}. ${t.team} (${t.pts}pts - relegation)`).join("\n");
 
-        return `LEAGUE: ${lg.name}\nFIXTURES (ranked best to worst by scoring likelihood):\n${fxLines||"none"}\nTOP 6:\n${tableLines||"none"}\nBOTTOM 3:\n${botLines||"none"}`;
+        return `LEAGUE: ${lg.name}\nFIXTURES (ranked best to worst by scoring likelihood — use EXACTLY these fixture names, never substitute):\n${fxLines||"none"}\nTOP 6:\n${tableLines||"none"}\nBOTTOM 3:\n${botLines||"none"}`;
       }).join("\n\n---\n\n");
 
       return `Today is ${today}. You are an expert football betting analyst.
@@ -376,6 +376,7 @@ Return ONLY this JSON (no markdown, no backticks):
 {"leagues":[{"league":"${lgName}","flag":"PLACEHOLDER","context":"one sentence on league situation","picks":[{"home":"TeamA","away":"TeamB","date":"Sat 2 May","time":"15:00","primary":{"pick":"TeamA to Score","xg":1.42,"odds":"1.45","confidence":"High","reason":"3 sentences referencing the REAL last 5 results and the REAL xG figures. Be specific about actual scores from last 5."},"builders":[{"name":"TeamA Win","odds":"1.75","confidence":"High","reason":"1-2 sentences"},{"name":"Over 1.5 Goals","odds":"1.45","confidence":"Medium","reason":"1-2 sentences"},{"name":"BTTS","odds":"1.80","confidence":"Medium","reason":"1-2 sentences"}],"combo":{"name":"Win + Goals","picks":["TeamA Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"1-2 sentences"},"form":[{"result":"W","score":"2-0","xg":1.8,"actual":2},{"result":"L","score":"0-1","xg":0.9,"actual":0},{"result":"W","score":"1-0","xg":1.2,"actual":1},{"result":"D","score":"1-1","xg":1.1,"actual":1},{"result":"W","score":"2-1","xg":1.6,"actual":2}],"tags":["tag1","tag2"]}]}]}
 
 CRITICAL RULES — NEVER VIOLATE:
+- home/away team names: copy EXACTLY from the fixture list above — never substitute with different teams or invent fixtures
 - primary.xg: copy EXACTLY from [REAL DATA] xG value for the PICK team — never invent or round differently
 - primary.pick: use EXACTLY the team named in [REAL DATA] PICK field
 - confidence: use EXACTLY the confidence from [REAL DATA]
