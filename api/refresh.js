@@ -390,8 +390,10 @@ export default async function handler(req, res) {
         const combinedXG = (f.hXG||1.35) + (f.aXG||1.35);
         // Builder logic: strong home fav gets Win, otherwise Double Chance
         // Goals: Over 1.5 if combined xG > 2.6, else Over 0.5
-        const builderWin = isHomePick && f.hXG >= 2.0 ? "Win" : "Double Chance";
-        const builderGoals = combinedXG > 2.6 ? "Over 1.5 Goals" : "Over 0.5 Goals";
+        // Win if pick team is clear favourite (home with xG >= 1.9, or very high xG)
+        const builderWin = (isHomePick && f.hXG >= 1.9) || f.pickXG >= 2.2 ? "Win" : "Double Chance";
+        // Goals market based on the picked team's own xG — team-specific not total game
+        const builderGoals = parseFloat(f.pickXG) >= 1.5 ? "Over 1.5 Goals" : "Over 0.5 Goals";
         return { home: f.home, away: f.away, date: f.date, time: f.time, utc: f.utc,
           pick: f.pickTeam, xg: parseFloat(f.pickXG)||1.35, hXG: f.hXG, aXG: f.aXG,
           isHomePick, combinedXG, builderWin, builderGoals,
@@ -422,9 +424,10 @@ export default async function handler(req, res) {
 ${pickLines}
 
 Return ONLY valid JSON:
-{"leagues":[{"league":"${lgName}","flag":"PLACEHOLDER","context":"${ctx}","picks":[{"home":"exact","away":"exact","date":"exact","time":"exact","primary":{"pick":"PICK to Score","xg":X.XX,"odds":"Scr odd or N/A","confidence":"exact","reason":"2 sentences on why PICK will score"},"builders":[{"name":"PICK Win","odds":"H or A odd","confidence":"Medium","reason":"1 sentence"},{"name":"Over 1.5 Goals","odds":"N/A","confidence":"Medium","reason":"1 sentence"},{"name":"BTTS","odds":"N/A","confidence":"Medium","reason":"1 sentence"}],"combo":{"name":"PICK Win + Goals","picks":["PICK Win","Over 1.5 Goals"],"odds":"CALCULATE","reason":"1 sentence"},"form":[{"result":"W","score":"2-0","xg":1.5,"actual":2}],"tags":["tag"]}]}]}
+{"leagues":[{"league":"${lgName}","flag":"PLACEHOLDER","context":"${ctx}","picks":[{"home":"exact","away":"exact","date":"exact","time":"exact","primary":{"pick":"PICK to Score","xg":X.XX,"odds":"N/A","confidence":"exact","reason":"2 sentences on why PICK will score"},"builders":[{"name":"PICK [Win OR Double Chance]","odds":"N/A","confidence":"Medium","reason":"1 sentence"},{"name":"PICK [Over 0.5 OR Over 1.5] Goals","odds":"N/A","confidence":"Medium","reason":"1 sentence"},{"name":"BTTS","odds":"N/A","confidence":"Medium","reason":"1 sentence"}],"combo":{"name":"PICK + Goals","picks":["PICK [Win OR Double Chance]","PICK [Over 0.5 OR Over 1.5] Goals"],"odds":"CALCULATE","reason":"1 sentence"},"form":[{"result":"W","score":"2-0","xg":1.5,"actual":2}],"tags":["tag"]}]}]}
 
-Copy home/away/date/time/pick/xg/confidence EXACTLY. Write ALL ${prePicks.length} picks. combo.odds="CALCULATE". flag="PLACEHOLDER". league="${lgName}". Raw JSON only.`;
+Copy home/away/date/time/pick/xg/confidence EXACTLY. Write ALL ${prePicks.length} picks. combo.odds="CALCULATE". flag="PLACEHOLDER". league="${lgName}".
+For builders and combo: use EXACTLY the builder names from the "builders:[...]" section above for each fixture — do not invent your own. Raw JSON only.`;
     };
 
 
@@ -502,7 +505,7 @@ Copy home/away/date/time/pick/xg/confidence EXACTLY. Write ALL ${prePicks.length
               {name:`${sp.pick} ${sp.builderGoals||"Over 0.5 Goals"}`, odds:"N/A", confidence:"Medium", reason:""},
               {name:"BTTS", odds:"N/A", confidence:"Medium", reason:""}
             ],
-            combo: {name:"Pick + Goals", picks:[`${sp.pick} Win`,"Over 1.5 Goals"], odds:"CALCULATE", reason:"Form and xG support a goals-heavy fixture."},
+            combo: {name:"Pick + Goals", picks:[`${sp.pick} ${sp.builderWin||"Double Chance"}`,`${sp.pick} ${sp.builderGoals||"Over 0.5 Goals"}`], odds:"CALCULATE", reason:"Form and xG support this combination."},
             form: sp.form,
             tags: sp.tags
           });
